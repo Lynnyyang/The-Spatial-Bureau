@@ -55,10 +55,9 @@ export const useAppStore = create<AppState>()(
           [id]: { ...s.cases[id], started: true, completed: true, score, badges },
         };
         const allBadges = Array.from(new Set([...s.badges, ...badges]));
-        const completedCount = Object.values(newCases).filter((c) => c.completed).length;
-        const avg =
-          Object.values(newCases).filter((c) => c.completed).reduce((a, c) => a + c.score, 0) /
-          Math.max(completedCount, 1);
+        const completedList = (Object.values(newCases) as CaseProgress[]).filter((c) => c.completed);
+        const completedCount = completedList.length;
+        const avg = completedList.reduce((a, c) => a + c.score, 0) / Math.max(completedCount, 1);
         let level: AppState["certificateLevel"] = "none";
         if (completedCount >= 1) level = "bronze";
         if (completedCount >= 4 && avg >= 70) level = "silver";
