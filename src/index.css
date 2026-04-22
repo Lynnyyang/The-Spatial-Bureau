@@ -2,104 +2,148 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/* Spatial Detective — Academic Clean Light Theme
+   All colors HSL. Use semantic tokens only.
 */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 40% 98%;
+    --foreground: 215 30% 15%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 215 30% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 215 30% 15%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Deep ocean blue — academic primary */
+    --primary: 212 88% 38%;
+    --primary-foreground: 210 40% 99%;
+    --primary-soft: 212 90% 95%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Teal — secondary accent for data */
+    --secondary: 178 60% 92%;
+    --secondary-foreground: 188 80% 22%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 215 25% 95%;
+    --muted-foreground: 215 18% 46%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 168 70% 42%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 30 60% 15%;
 
-    --radius: 0.5rem;
+    --success: 152 65% 40%;
+    --success-foreground: 0 0% 100%;
 
-    --sidebar-background: 0 0% 98%;
+    --border: 215 25% 88%;
+    --input: 215 25% 88%;
+    --ring: 212 88% 38%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --radius: 0.625rem;
 
-    --sidebar-primary: 240 5.9% 10%;
+    /* Spatial data palette — for choropleth / Moran quadrants */
+    --data-1: 212 88% 38%;   /* HH high-high (deep blue) */
+    --data-2: 0 72% 50%;     /* LL low-low (red) ... we'll remap below */
+    --hh: 0 72% 50%;         /* hot spot — red */
+    --ll: 212 88% 45%;       /* cold spot — blue */
+    --hl: 28 92% 55%;        /* high outlier surrounded by low — orange */
+    --lh: 280 60% 55%;       /* low outlier surrounded by high — purple */
+    --neutral: 215 20% 80%;
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    /* Choropleth ramp (low -> high) */
+    --ramp-1: 210 60% 96%;
+    --ramp-2: 210 70% 82%;
+    --ramp-3: 212 78% 62%;
+    --ramp-4: 212 85% 45%;
+    --ramp-5: 218 88% 28%;
 
-    --sidebar-accent: 240 4.8% 95.9%;
+    /* Gradients & shadows */
+    --gradient-hero: linear-gradient(135deg, hsl(212 88% 38%) 0%, hsl(188 80% 38%) 100%);
+    --gradient-soft: linear-gradient(180deg, hsl(212 90% 97%) 0%, hsl(0 0% 100%) 100%);
+    --shadow-panel: 0 1px 2px hsl(215 30% 15% / 0.04), 0 8px 24px -12px hsl(212 50% 30% / 0.18);
+    --shadow-glow: 0 0 0 4px hsl(212 88% 38% / 0.12);
 
-    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-background: 215 35% 98%;
+    --sidebar-foreground: 215 25% 28%;
+    --sidebar-primary: 212 88% 38%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 212 60% 94%;
+    --sidebar-accent-foreground: 212 88% 28%;
+    --sidebar-border: 215 25% 90%;
+    --sidebar-ring: 212 88% 38%;
 
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --transition-smooth: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --background: 215 35% 8%;
+    --foreground: 210 40% 96%;
+    --card: 215 30% 11%;
+    --card-foreground: 210 40% 96%;
+    --popover: 215 30% 11%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 212 90% 60%;
+    --primary-foreground: 215 35% 10%;
+    --primary-soft: 212 60% 18%;
+    --secondary: 215 25% 18%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 215 25% 16%;
+    --muted-foreground: 215 18% 65%;
+    --accent: 168 70% 48%;
+    --accent-foreground: 215 35% 8%;
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 25% 20%;
+    --input: 215 25% 20%;
+    --ring: 212 90% 60%;
+    --sidebar-background: 215 35% 9%;
+    --sidebar-foreground: 210 25% 80%;
+    --sidebar-primary: 212 90% 60%;
+    --sidebar-primary-foreground: 215 35% 8%;
+    --sidebar-accent: 215 30% 15%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 215 25% 18%;
+    --sidebar-ring: 212 90% 60%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
+  * { @apply border-border; }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+  h1, h2, h3, h4 { @apply tracking-tight; }
+}
+
+@layer utilities {
+  .bg-gradient-hero { background: var(--gradient-hero); }
+  .bg-gradient-soft { background: var(--gradient-soft); }
+  .shadow-panel { box-shadow: var(--shadow-panel); }
+  .shadow-glow { box-shadow: var(--shadow-glow); }
+  .text-balance { text-wrap: balance; }
+
+  .grid-bg {
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.5) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  @keyframes pulse-ring {
+    0% { transform: scale(0.6); opacity: 0.8; }
+    100% { transform: scale(2.4); opacity: 0; }
+  }
+  .animate-pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
+
+  @keyframes ripple {
+    0% { r: 0; opacity: 0.7; }
+    100% { r: 60; opacity: 0; }
   }
 }
