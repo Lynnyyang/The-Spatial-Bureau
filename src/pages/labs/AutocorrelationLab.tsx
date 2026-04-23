@@ -349,7 +349,7 @@ export default function AutocorrelationLab() {
             values={values}
             size={460}
             selected={selected}
-            onCellClick={setSelected}
+            onCellClick={handleCellClick}
             colorOf={(i) => quadrantColor(lisaThr[i])}
           />
           <div className="mt-3 grid grid-cols-5 gap-1 text-[10px]">
@@ -368,7 +368,7 @@ export default function AutocorrelationLab() {
             values={points}
             size={420}
             selected={selected}
-            onPointClick={setSelected}
+            onPointClick={handleCellClick}
             colorOf={(i) => quadrantColor(lisaThr[i])}
           />
           <div className="mt-3 p-3 rounded-md bg-muted/40 text-sm">
