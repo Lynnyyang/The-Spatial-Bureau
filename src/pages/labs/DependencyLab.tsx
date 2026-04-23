@@ -535,7 +535,7 @@ function BlurChallenge({ W }: { W: number[][] }) {
 }
 
 // ============ 挑战 5：猜数挑战 ============
-function GuessChallenge({ scenario, W, award }: { scenario: Scenario; W: number[][]; award: (n: number) => void }) {
+function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => void }) {
   const [seed, setSeed] = useState(123);
   const [vals, setVals] = useState(() => generateClustered(123, 2));
   const [hidden, setHidden] = useState<number>(() => Math.floor(Math.random() * TOTAL));
