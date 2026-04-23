@@ -5,13 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { GridCity } from "@/components/GridCity";
-import {
-  buildNeighbors,
-  generateClustered,
-  neighborsOf,
-  GRID_SIZE,
-  TOTAL,
-} from "@/lib/spatial";
+import { GRID_SIZE, TOTAL } from "@/lib/spatial";
 import { useAppStore } from "@/store/app";
 import {
   Grid3x3,
