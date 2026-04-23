@@ -377,47 +377,44 @@ function InfluenceMixer() {
   );
 }
 
-// ============ 玩法二：配送权重分配 ============
-// 故事：你是某街区的快递站长，要给周边几个邻居街区分配派送车辆比例（总和=1）。
-// 系统按邻居的"客户密度"给出参考答案，玩家用滑杆分配。
+// ============ 玩法二：配送权重分配（简化版） ============
+// 故事：你是快递站长，只有 4 个固定邻居（上下左右）。
+// 看每个邻居的"订单数"（用大表情和数字直观表示），把 100% 运力分给他们。
+// 每张邻居卡片可以点击查看提示，点"自动均衡"直接套用最优分配。
 function DeliveryAllocator() {
   const award = useAppStore((s) => s.awardXp);
   const [round, setRound] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
+  const [hintIdx, setHintIdx] = useState<number | null>(null);
 
-  // 随机一个 center，用 queen 邻接取邻居（保证有 3-8 个邻居）
-  const seed = 11 + round * 7;
-  const center = useMemo(() => {
-    // 选个不在角落的 center，邻居数稳定为 5-8
-    const interior = [
-      18, 19, 20, 21, 22, 26, 27, 28, 29, 30, 34, 35, 36, 37, 38, 42, 43, 44, 45, 46,
-    ];
-    const rng = (seed * 9301 + 49297) % 233280;
-    return interior[rng % interior.length];
-  }, [seed]);
+  // 4 个固定方向的邻居，订单数按 round 变化
+  const ROUNDS = [
+    { center: 27, orders: [80, 20, 40, 60], story: "周一早高峰：北边写字楼订单爆发！" },
+    { center: 27, orders: [30, 30, 90, 50], story: "周末：南边商场客流最大。" },
+    { center: 27, orders: [55, 45, 55, 45], story: "平峰时段：四个方向需求接近。" },
+    { center: 27, orders: [10, 70, 20, 100], story: "节日大促：南边 & 东边一起爆单！" },
+  ];
 
-  const W = useMemo(() => buildNeighbors({ rule: "queen" }), []);
-  const neighbors = useMemo(() => neighborsOf(W, center), [W, center]);
+  const cur = ROUNDS[round % ROUNDS.length];
+  const center = cur.center;
+  const DIRS = [
+    { label: "北 ↑", offset: -GRID_SIZE, emoji: "🏢", desc: "北边街区" },
+    { label: "西 ←", offset: -1, emoji: "🏪", desc: "西边街区" },
+    { label: "南 ↓", offset: GRID_SIZE, emoji: "🛍️", desc: "南边街区" },
+    { label: "东 →", offset: 1, emoji: "🏬", desc: "东边街区" },
+  ];
+  const neighbors = DIRS.map((d) => center + d.offset);
+  const orders = cur.orders;
 
-  // 邻居各自的"客户密度" 0..100
-  const customerDensity = useMemo(() => {
-    const vals = generateClustered(seed, 1);
-    return neighbors.map((j) => vals[j]);
-  }, [neighbors, seed]);
-
+  // 真实的最优比例
   const truthRatios = useMemo(() => {
-    const sum = customerDensity.reduce((a, b) => a + b, 0) || 1;
-    return customerDensity.map((v) => v / sum);
-  }, [customerDensity]);
+    const sum = orders.reduce((a, b) => a + b, 0) || 1;
+    return orders.map((v) => v / sum);
+  }, [orders]);
 
-  // 玩家分配：默认平均分配
-  const [allocation, setAllocation] = useState<number[]>([]);
-
-  // 当邻居数变化时重置
-  useMemo(() => {
-    setAllocation(neighbors.map(() => Math.round(100 / neighbors.length)));
-  }, [neighbors]);
+  // 玩家分配：默认平均
+  const [allocation, setAllocation] = useState<number[]>([25, 25, 25, 25]);
 
   const total = allocation.reduce((a, b) => a + b, 0);
   const valid = total === 100;
@@ -430,15 +427,40 @@ function DeliveryAllocator() {
     });
   };
 
-  // 准备地图：center 高亮为紫色，邻居根据 customerDensity 上色
+  const autoBalance = () => {
+    // 按订单比例自动分配，并取整后修正使总和=100
+    const raw = truthRatios.map((r) => r * 100);
+    const rounded = raw.map((v) => Math.round(v));
+    const diff = 100 - rounded.reduce((a, b) => a + b, 0);
+    if (diff !== 0) {
+      // 把误差给订单最大的那个
+      const maxIdx = orders.indexOf(Math.max(...orders));
+      rounded[maxIdx] += diff;
+    }
+    setAllocation(rounded);
+    toast.message("已套用按订单比例的最优分配 ✨");
+  };
+
+  const showHint = (idx: number) => {
+    setHintIdx(idx);
+    const ratio = (truthRatios[idx] * 100).toFixed(0);
+    const o = orders[idx];
+    const total = orders.reduce((a, b) => a + b, 0);
+    toast.message(
+      `${DIRS[idx].label} 订单 ${o} / 全部 ${total} → 应分配约 ${ratio}%`,
+      { description: `订单越多，权重越大。这就是 wᵢⱼ = 邻居j订单 / 所有邻居订单总和。` }
+    );
+  };
+
+  // 地图：中心紫色，邻居按订单数着色
   const mapValues = useMemo(() => {
     const out = new Array(TOTAL).fill(0);
     neighbors.forEach((j, idx) => {
-      out[j] = customerDensity[idx];
+      out[j] = orders[idx];
     });
     out[center] = 100;
     return out;
-  }, [neighbors, customerDensity, center]);
+  }, [neighbors, orders, center]);
 
   const colorOf = (i: number) => {
     if (i === center) return "hsl(var(--primary))";
@@ -448,11 +470,10 @@ function DeliveryAllocator() {
 
   const submit = () => {
     if (!valid) {
-      toast.error(`分配总和必须为 100%（当前 ${total}%）`);
+      toast.error(`总和必须 = 100%（当前 ${total}%）`);
       return;
     }
     setSubmitted(true);
-    // 误差：用户分配（百分比/100）与真实比例的 L1 距离
     const err = allocation.reduce(
       (acc, v, i) => acc + Math.abs(v / 100 - truthRatios[i]),
       0
@@ -460,14 +481,16 @@ function DeliveryAllocator() {
     const pts = Math.max(5, Math.round(40 - err * 60));
     setScore((s) => s + pts);
     award(pts);
-    if (err < 0.1) toast.success(`完美分配！+${pts} XP · 总误差 ${(err * 100).toFixed(0)}%`);
-    else if (err < 0.25) toast.message(`不错！+${pts} XP · 总误差 ${(err * 100).toFixed(0)}%`);
-    else toast.message(`+${pts} XP · 误差较大，再试试看`);
+    if (err < 0.1) toast.success(`完美！+${pts} XP`);
+    else if (err < 0.25) toast.message(`不错！+${pts} XP`);
+    else toast.message(`+${pts} XP · 再试试看`);
   };
 
   const next = () => {
     setRound((r) => r + 1);
     setSubmitted(false);
+    setAllocation([25, 25, 25, 25]);
+    setHintIdx(null);
   };
 
   return (
@@ -478,16 +501,16 @@ function DeliveryAllocator() {
             第 {round + 1} 轮 · 配送权重分配
           </div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Truck className="h-5 w-5 text-primary" /> 给每个邻居街区分配派送车辆比例
+            <Truck className="h-5 w-5 text-primary" /> 把 100% 运力分给 4 个邻居街区
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            紫色为你的快递站。颜色越深表示该邻居街区"客户密度"越高，应该分到更多运力。所有邻居加起来必须 = 100%。
+            📦 {cur.story} · 点击邻居卡片可看提示，订单越多应分到越多运力。
           </p>
         </div>
         <Badge variant="secondary">累计 {score} XP</Badge>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_360px] gap-6 items-start">
+      <div className="grid lg:grid-cols-[1fr_380px] gap-6 items-start">
         <div>
           <GridCity
             values={mapValues}
@@ -498,71 +521,116 @@ function DeliveryAllocator() {
             showLabels={true}
           />
           <p className="text-xs text-muted-foreground mt-2 text-center">
-            数字 = 该街区的客户密度（0-100）
+            🚚 紫色 = 你的快递站 · 数字 = 邻居街区订单数
           </p>
         </div>
 
         <div className="space-y-3">
+          {/* 总和提示 */}
           <div
-            className={`rounded-md border-2 p-3 text-sm font-mono flex items-center justify-between ${
+            className={`rounded-lg border-2 p-3 flex items-center justify-between transition-colors ${
               valid ? "border-success bg-success/10" : "border-warning bg-warning/10"
             }`}
           >
-            <span>分配总和</span>
-            <span className="text-lg font-bold">{total}%</span>
+            <span className="text-sm font-medium">分配总和</span>
+            <div className="flex items-center gap-2">
+              <span className={`text-2xl font-bold font-mono ${valid ? "text-success" : "text-warning"}`}>
+                {total}%
+              </span>
+              {valid ? (
+                <CheckCircle2 className="h-5 w-5 text-success" />
+              ) : (
+                <span className="text-xs text-warning">需 = 100%</span>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
-            {neighbors.map((j, idx) => (
-              <div key={j} className="rounded-md border border-border p-2.5 bg-background">
-                <div className="flex justify-between items-center text-xs mb-1.5">
-                  <span className="font-mono">
-                    邻居 #{j} · 客户密度{" "}
-                    <span className="font-semibold text-primary">{customerDensity[idx]}</span>
-                  </span>
-                  <span className="font-mono font-bold">{allocation[idx] ?? 0}%</span>
-                </div>
-                <Slider
-                  min={0}
-                  max={100}
-                  step={1}
-                  value={[allocation[idx] ?? 0]}
-                  onValueChange={(v) => updateAlloc(idx, v[0])}
-                  disabled={submitted}
-                />
-                {submitted && (
-                  <div className="text-[10px] mt-1 font-mono flex justify-between">
-                    <span className="text-muted-foreground">
-                      参考答案 {(truthRatios[idx] * 100).toFixed(0)}%
-                    </span>
-                    <span
-                      className={
-                        Math.abs(allocation[idx] - truthRatios[idx] * 100) < 8
-                          ? "text-success"
-                          : "text-warning"
-                      }
-                    >
-                      偏差 {Math.abs(allocation[idx] - truthRatios[idx] * 100).toFixed(0)}%
+          {/* 4 张邻居卡片 */}
+          <div className="grid grid-cols-2 gap-2">
+            {DIRS.map((d, idx) => {
+              const isHinted = hintIdx === idx;
+              const dev = submitted
+                ? Math.abs(allocation[idx] - truthRatios[idx] * 100)
+                : 0;
+              const cardCls = submitted
+                ? dev < 8
+                  ? "border-success bg-success/5"
+                  : "border-warning bg-warning/5"
+                : isHinted
+                ? "border-primary bg-primary-soft"
+                : "border-border bg-background hover:border-primary/50";
+              return (
+                <div
+                  key={d.label}
+                  className={`rounded-lg border-2 p-3 transition-all ${cardCls}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => showHint(idx)}
+                    className="w-full text-left mb-2 group"
+                    title="点击查看提示"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-semibold">{d.label}</span>
+                      <span className="text-[10px] text-muted-foreground group-hover:text-primary">
+                        💡 提示
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-2xl">{d.emoji}</span>
+                      <div>
+                        <div className="text-[10px] text-muted-foreground">订单</div>
+                        <div className="text-lg font-bold font-mono leading-none">{orders[idx]}</div>
+                      </div>
+                    </div>
+                  </button>
+                  <div className="flex items-baseline justify-between mb-1">
+                    <span className="text-[10px] text-muted-foreground">分配运力</span>
+                    <span className="text-base font-bold font-mono text-primary">
+                      {allocation[idx]}%
                     </span>
                   </div>
-                )}
-              </div>
-            ))}
+                  <Slider
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={[allocation[idx]]}
+                    onValueChange={(v) => updateAlloc(idx, v[0])}
+                    disabled={submitted}
+                  />
+                  {submitted && (
+                    <div className="text-[10px] mt-1.5 font-mono flex justify-between">
+                      <span className="text-muted-foreground">
+                        答案 {(truthRatios[idx] * 100).toFixed(0)}%
+                      </span>
+                      <span className={dev < 8 ? "text-success" : "text-warning"}>
+                        偏差 {dev.toFixed(0)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {!submitted ? (
-            <Button onClick={submit} disabled={!valid} className="w-full">
-              <Target className="h-3.5 w-3.5 mr-1" /> 提交分配方案
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" size="sm" onClick={autoBalance}>
+                <Sparkles className="h-3.5 w-3.5 mr-1" /> 自动均衡
+              </Button>
+              <Button onClick={submit} disabled={!valid} size="sm">
+                <Target className="h-3.5 w-3.5 mr-1" /> 提交方案
+              </Button>
+            </div>
           ) : (
             <Button onClick={next} className="w-full">
-              下一轮
+              下一轮 →
             </Button>
           )}
 
           <div className="rounded-md bg-primary-soft p-3 text-[11px] text-primary leading-relaxed">
-            🎯 <strong>这就是行标准化的权重矩阵 W 的一行！</strong>每个权重 wᵢⱼ
-            表示邻居 j 对中心 i 的相对重要性，所有邻居权重加起来 = 1。
+            🎯 <strong>这就是行标准化的权重矩阵 W 的一行！</strong>
+            wᵢⱼ = 邻居 j 的订单 ÷ 所有邻居订单之和，加起来 = 1。
           </div>
         </div>
       </div>
