@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { GridCity } from "@/components/GridCity";
 import { GRID_SIZE, TOTAL } from "@/lib/spatial";
 import { useAppStore } from "@/store/app";
