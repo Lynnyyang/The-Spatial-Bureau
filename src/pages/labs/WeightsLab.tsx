@@ -899,7 +899,7 @@ function HigherOrderLab() {
                         size="sm"
                         variant={
                           feedback
-                            ? opt === challenge.answer
+                            ? challenge.answers.includes(opt)
                               ? "default"
                               : "outline"
                             : "outline"
@@ -907,7 +907,7 @@ function HigherOrderLab() {
                         disabled={!!feedback}
                         onClick={() => submitAnswer(opt)}
                         className={
-                          feedback && opt === challenge.answer
+                          feedback && challenge.answers.includes(opt)
                             ? "bg-success text-success-foreground hover:bg-success"
                             : ""
                         }
