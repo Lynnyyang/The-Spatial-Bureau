@@ -128,8 +128,10 @@ export default function AutocorrelationLab() {
     {
       id: "find-outlier",
       title: "第五步 · 揪出空间异常 (HL / LH)",
-      prompt: `异常点"鹤立鸡群"或"凤凰落鸡窝"——与邻居相反。请点击一个 HL 或 LH 单元。共 ${ctx.outlierSet.size} 个候选。`,
-      hint: "HL：高值落在低值海洋中（橙色）；LH：低值陷在高值丛林中（黄色）。",
+      prompt: ctx.outlierSet.size > 0
+        ? `异常点"鹤立鸡群"或"凤凰落鸡窝"——与邻居相反。请点击一个 HL 或 LH 单元。共 ${ctx.outlierSet.size} 个候选。`
+        : `本组数据空间结构非常"干净"，没有出现显著的 HL/LH 异常点。点击下方按钮直接结业，或换一组数据再挑战。`,
+      hint: "HL：高值落在低值海洋中（橙色）；LH：低值陷在高值丛林中（黄色）。若一个都没有，说明聚集非常规整。",
       type: "pick",
       validate: (a, c) => typeof a === "number" && c.outlierSet.has(a),
       feedback: (ok) => (ok ? "出色！异常点往往揭示局部特殊机制。" : "目标是 HL 或 LH 颜色的单元。"),
@@ -262,7 +264,29 @@ export default function AutocorrelationLab() {
               </div>
             )}
 
-            {currentStep.type === "pick" && (
+            {currentStep.type === "pick" && currentStep.id === "find-outlier" && ctx.outlierSet.size === 0 ? (
+              <div className="flex items-center justify-between gap-3 bg-warning/10 rounded-md px-3 py-2 flex-wrap">
+                <div className="text-xs text-warning-foreground">
+                  ⚠️ 本组数据没有显著的 HL/LH 异常点。可直接结业，或换一组更"参差"的数据。
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setSeed((s) => s + 1)}>
+                    换一组数据
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setAnswered((a) => ({ ...a, [stepIdx]: true }));
+                      setFeedback({ ok: true, msg: "已确认无异常点 —— 这本身就是一种重要结论。" });
+                      awardXp(10);
+                      toast.success("+10 XP");
+                    }}
+                  >
+                    确认无异常,结业
+                  </Button>
+                </div>
+              </div>
+            ) : currentStep.type === "pick" && (
               <div className="text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
                 👇 在下方 LISA 地图或散点图上点击你认为符合条件的区域。
               </div>
