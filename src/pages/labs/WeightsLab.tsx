@@ -174,23 +174,35 @@ function InfluenceMixer() {
   const sumOk = sumWeights >= level.targetSum.min && sumWeights <= level.targetSum.max;
   const passed = reachedOk && sumOk;
 
-  // 自动通关：第一次满足条件时奖励 + 标记
-  useMemo(() => {
-    if (passed && !cleared[levelIdx]) {
-      const next = [...cleared];
-      next[levelIdx] = true;
-      setCleared(next);
-      award(30);
-      toast.success(`🎉 ${level.title} 通关！+30 XP`);
+  const [attempts, setAttempts] = useState(0);
+
+  const submit = () => {
+    setAttempts((n) => n + 1);
+    if (!passed) {
+      const msgs: string[] = [];
+      if (!reachedOk) msgs.push(`被影响街区 ${reachedCount}，目标 ${level.targetReached.min}-${level.targetReached.max}`);
+      if (!sumOk) msgs.push(`权重总和 ${sumWeights.toFixed(2)}，目标 ${level.targetSum.min.toFixed(1)}-${level.targetSum.max.toFixed(1)}`);
+      toast.error(`未达成 · ${msgs.join(" · ")}`);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [passed]);
+    if (cleared[levelIdx]) {
+      toast.message("本关已通过，可直接进入下一关");
+      return;
+    }
+    const next = [...cleared];
+    next[levelIdx] = true;
+    setCleared(next);
+    const bonus = attempts === 0 ? 10 : 0;
+    award(30 + bonus);
+    toast.success(`🎉 ${level.title} 通关！+${30 + bonus} XP${bonus ? " · 一次过奖励" : ""}`);
+  };
 
   const goNext = () => {
     if (levelIdx < LEVELS.length - 1) {
       setLevelIdx((i) => i + 1);
       setRadius([2]);
       setDecay([1.0]);
+      setAttempts(0);
     }
   };
 
