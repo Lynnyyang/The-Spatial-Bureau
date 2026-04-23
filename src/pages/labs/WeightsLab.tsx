@@ -1072,17 +1072,109 @@ function BugHunt() {
               <tbody>
                 {cs.matrix.map((row, i) => {
                   const sum = rowSums[i];
-                  const sumOk = Math.abs(sum - 1) < 0.01 || sum === 0;
+                  // 行和判定：容差 0.02（容许 0.33+0.33+0.33=0.99 这种浮点误差）
+                  const sumOk = Math.abs(sum - 1) < 0.02 || sum === 0;
+                  const rowKey = `row:${i}`;
+                  const rowMark = marks[rowKey];
+                  const rowTruth = truth[rowKey];
+                  const rowMarkBug = rowMark ? BUG_TYPES.find((b) => b.id === rowMark) : null;
+                  const rowTruthBug = rowTruth ? BUG_TYPES.find((b) => b.id === rowTruth) : null;
+
+                  // 行标签的颜色逻辑（与单元格相似）
+                  let rowBg = "text-muted-foreground";
+                  if (hoverCell && Number(hoverCell.split(",")[0]) === i) rowBg = "text-primary";
+                  let rowBorder = "border-transparent";
+                  if (submitted) {
+                    if (rowMark && rowTruth && rowMark === rowTruth)
+                      rowBorder = "border-success bg-success/30";
+                    else if (rowMark && rowTruth && rowMark !== rowTruth)
+                      rowBorder = "border-warning bg-warning/30";
+                    else if (rowMark && !rowTruth)
+                      rowBorder = "border-destructive bg-destructive/30";
+                    else if (!rowMark && rowTruth)
+                      rowBorder = "border-warning border-dashed bg-warning/20";
+                  } else if (rowMark) {
+                    rowBorder = "border-primary bg-primary-soft";
+                  }
+
                   return (
                     <tr key={i}>
-                      <td
-                        className={`w-7 h-9 text-center font-bold ${
-                          hoverCell && Number(hoverCell.split(",")[0]) === i
-                            ? "text-primary"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {REGIONS[i]}
+                      <td className="p-0.5">
+                        <Popover
+                          open={openCell === rowKey}
+                          onOpenChange={(o) => setOpenCell(o ? rowKey : null)}
+                        >
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={submitted}
+                              className={`relative w-7 h-9 rounded border ${rowBorder} text-center font-bold transition-all hover:scale-110 hover:z-10 disabled:hover:scale-100 ${rowBg}`}
+                              title={`点击标注 ${REGIONS[i]} 行的"行和≠1"问题`}
+                            >
+                              {REGIONS[i]}
+                              {rowMark && rowMarkBug && (
+                                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[8px] flex items-center justify-center font-bold shadow">
+                                  {rowMarkBug.emoji}
+                                </span>
+                              )}
+                              {submitted && !rowMark && rowTruthBug && (
+                                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-warning text-warning-foreground text-[8px] flex items-center justify-center font-bold shadow">
+                                  {rowTruthBug.emoji}
+                                </span>
+                              )}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-2" side="left">
+                            <div className="text-[11px] text-muted-foreground mb-2 px-1">
+                              <span className="font-mono font-bold text-foreground">
+                                {REGIONS[i]} 行 · Σⱼ w[{REGIONS[i]},j] = {smartSum(sum)}
+                              </span>
+                              <div className="mt-0.5">
+                                {sumOk
+                                  ? `✅ 行和已正确归一${sum === 0 ? "（孤岛行）" : ""}`
+                                  : `❌ 行和 ${smartSum(sum)} ≠ 1，违反行标准化`}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              {/* 只允许行级标签：rowsum */}
+                              {BUG_TYPES.filter((b) => b.id === "rowsum").map((b) => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() => markCell(rowKey, b.id)}
+                                  className={`w-full text-left rounded p-1.5 text-xs transition-colors flex items-start gap-2 ${
+                                    rowMark === b.id
+                                      ? "bg-primary text-primary-foreground"
+                                      : "hover:bg-muted"
+                                  }`}
+                                >
+                                  <span className="text-base leading-none">{b.emoji}</span>
+                                  <div className="flex-1">
+                                    <div className="font-semibold">{b.short}</div>
+                                    <div
+                                      className={`text-[10px] leading-tight mt-0.5 ${
+                                        rowMark === b.id
+                                          ? "text-primary-foreground/80"
+                                          : "text-muted-foreground"
+                                      }`}
+                                    >
+                                      {b.label}
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+                              {rowMark && (
+                                <button
+                                  type="button"
+                                  onClick={() => clearMark(rowKey)}
+                                  className="w-full text-left rounded p-1.5 text-[11px] text-muted-foreground hover:bg-muted border-t border-border mt-1 pt-2"
+                                >
+                                  ✕ 清除此行标记
+                                </button>
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       </td>
                       <td className="w-3 text-muted-foreground text-center">→</td>
                       {row.map((c, j) => {
