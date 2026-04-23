@@ -909,7 +909,7 @@ function BugHunt() {
 
   const cs = BUG_CASES[caseIdx];
 
-  // 真实答案：cellKey -> bugId
+  // 真实答案：cellKey -> bugId（cell 用 "i,j"，行级用 "row:i"）
   const truth = useMemo(() => {
     const t: Record<string, string> = {};
     for (let i = 0; i < 9; i++) {
@@ -917,6 +917,11 @@ function BugHunt() {
         const b = cs.matrix[i][j].bugId;
         if (b) t[`${i},${j}`] = b;
       }
+    }
+    if (cs.rowBugs) {
+      Object.entries(cs.rowBugs).forEach(([i, b]) => {
+        t[`row:${i}`] = b;
+      });
     }
     return t;
   }, [cs]);
