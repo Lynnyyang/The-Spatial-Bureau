@@ -268,9 +268,9 @@ function RippleChallenge({ W }: { W: number[][] }) {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 2 / 5 · 因果直觉</div>
-          <h2 className="text-lg font-semibold">空间影响波纹 · {scenario.name}</h2>
+          <h2 className="text-lg font-semibold">空间影响波纹 · 城市温度</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            点击任一{scenario.name === "疫情病例" ? "社区" : "区域"}，模拟一次冲击向邻里扩散。观察 Moran's I 实时变化。
+            点击任一街区，模拟一次"热源冲击"（如新建的工业园）向邻里扩散。观察 Moran's I 实时变化。
           </p>
         </div>
         <div className="text-right">
