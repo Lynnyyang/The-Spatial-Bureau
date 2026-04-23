@@ -23,9 +23,6 @@ import {
   Sparkles,
   Waves,
   Thermometer,
-  Home,
-  Activity,
-  ShieldAlert,
   Target,
   Zap,
   RotateCcw,
@@ -35,56 +32,18 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-// ============ 场景定义 ============
-type Scenario = {
-  id: string;
-  name: string;
-  icon: typeof Thermometer;
-  unit: string;
-  description: string;
-  hint: string;
+// ============ 统一场景：城市温度 ============
+const SCENARIO = {
+  name: "城市温度",
+  unit: "°C",
+  description:
+    "情境：盛夏午后，新域市气象局在 8×8 网格上采集了地表温度。热岛效应使工业区、商圈、密集建成区的温度向邻里街区扩散——这正是观察空间依赖性的绝佳样本。",
 };
-
-const SCENARIOS: Scenario[] = [
-  {
-    id: "temp",
-    name: "城市温度",
-    icon: Thermometer,
-    unit: "°C",
-    description: "夏季午后地表温度分布。热岛效应通常使相邻街区气温接近。",
-    hint: "工业区、商圈往往形成连片高温团块。",
-  },
-  {
-    id: "price",
-    name: "房屋均价",
-    icon: Home,
-    unit: "k/㎡",
-    description: "二手房成交均价。学区、地铁、商业配套呈空间外溢。",
-    hint: "高房价区与低房价区往往各自抱团。",
-  },
-  {
-    id: "epi",
-    name: "疫情病例",
-    icon: Activity,
-    unit: "例",
-    description: "传染病周新增病例数。社区接触是主要扩散路径。",
-    hint: "传染病通常沿邻里链式扩散，呈空间集聚。",
-  },
-  {
-    id: "crime",
-    name: "犯罪事件",
-    icon: ShieldAlert,
-    unit: "起",
-    description: "刑事案件月发案数。治安洼地具有空间惯性。",
-    hint: "犯罪热点常位于交界地带、形成片状黑区。",
-  },
-];
 
 // ============ 主组件 ============
 export default function DependencyLab() {
   const award = useAppStore((s) => s.awardXp);
   const W = useMemo(() => buildNeighbors({ rule: "queen" }), []);
-  const [scenario, setScenario] = useState<Scenario>(SCENARIOS[0]);
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
@@ -95,38 +54,20 @@ export default function DependencyLab() {
             <Waves className="h-6 w-6 text-primary" /> 空间依赖性感知实验室
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            从感性认识开始：相邻区域为何不应被视为独立？通过四个真实场景与五项挑战，亲手"摸到"空间依赖。
+            围绕「城市温度」这一统一情境，通过 5 项递进挑战亲手"摸到"空间依赖。
           </p>
         </div>
       </header>
 
-      {/* 场景切换条 */}
-      <Card className="p-4 shadow-panel border-border/60">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground font-mono mr-2">当前场景：</span>
-          {SCENARIOS.map((s) => {
-            const Icon = s.icon;
-            const active = s.id === scenario.id;
-            return (
-              <button
-                key={s.id}
-                onClick={() => setScenario(s)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm border transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                    : "bg-background border-border hover:border-primary/50"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {s.name}
-              </button>
-            );
-          })}
+      {/* 情境卡片 */}
+      <Card className="p-4 shadow-panel border-border/60 flex items-start gap-3">
+        <div className="rounded-md bg-primary-soft p-2 flex-shrink-0">
+          <Thermometer className="h-5 w-5 text-primary" />
         </div>
-        <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          <Sparkles className="h-3 w-3 inline mr-1 text-primary" />
-          {scenario.description}
-        </p>
+        <div>
+          <div className="text-sm font-semibold mb-1">案件情境 · {SCENARIO.name}（{SCENARIO.unit}）</div>
+          <p className="text-xs text-muted-foreground leading-relaxed">{SCENARIO.description}</p>
+        </div>
       </Card>
 
       <Tabs defaultValue="spot" className="w-full">
@@ -139,19 +80,19 @@ export default function DependencyLab() {
         </TabsList>
 
         <TabsContent value="spot" className="mt-4">
-          <SpotChallenge scenario={scenario} W={W} award={award} />
+          <SpotChallenge W={W} award={award} />
         </TabsContent>
         <TabsContent value="ripple" className="mt-4">
-          <RippleChallenge scenario={scenario} W={W} />
+          <RippleChallenge W={W} />
         </TabsContent>
         <TabsContent value="paint" className="mt-4">
-          <PaintChallenge scenario={scenario} W={W} award={award} />
+          <PaintChallenge W={W} award={award} />
         </TabsContent>
         <TabsContent value="blur" className="mt-4">
-          <BlurChallenge scenario={scenario} W={W} />
+          <BlurChallenge W={W} />
         </TabsContent>
         <TabsContent value="guess" className="mt-4">
-          <GuessChallenge scenario={scenario} W={W} award={award} />
+          <GuessChallenge W={W} award={award} />
         </TabsContent>
       </Tabs>
     </div>
@@ -159,7 +100,7 @@ export default function DependencyLab() {
 }
 
 // ============ 挑战 1：找出聚集 ============
-function SpotChallenge({ scenario, W, award }: { scenario: Scenario; W: number[][]; award: (n: number) => void }) {
+function SpotChallenge({ W, award }: { W: number[][]; award: (n: number) => void }) {
   const [seed, setSeed] = useState(7);
   const [chosen, setChosen] = useState<number | null>(null);
   const [revealed, setRevealed] = useState(false);
@@ -208,8 +149,8 @@ function SpotChallenge({ scenario, W, award }: { scenario: Scenario; W: number[]
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 1 / 5 · 视觉识别</div>
-          <h2 className="text-lg font-semibold">哪一份{scenario.name}地图最可能存在空间依赖？</h2>
-          <p className="text-xs text-muted-foreground mt-1">{scenario.hint}</p>
+          <h2 className="text-lg font-semibold">哪一份温度地图最可能存在空间依赖？</h2>
+          <p className="text-xs text-muted-foreground mt-1">工业区、商圈往往形成连片高温团块，而随机分布则不会。</p>
         </div>
         <div className="flex items-center gap-2">
           {streak > 0 && (
@@ -271,7 +212,7 @@ function SpotChallenge({ scenario, W, award }: { scenario: Scenario; W: number[]
 }
 
 // ============ 挑战 2：影响波纹 ============
-function RippleChallenge({ scenario, W }: { scenario: Scenario; W: number[][] }) {
+function RippleChallenge({ W }: { W: number[][] }) {
   const [vals, setVals] = useState(() => generateClustered(99, 1));
   const [strength, setStrength] = useState([25]);
   const [radius, setRadius] = useState([2]);
@@ -327,9 +268,9 @@ function RippleChallenge({ scenario, W }: { scenario: Scenario; W: number[][] })
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 2 / 5 · 因果直觉</div>
-          <h2 className="text-lg font-semibold">空间影响波纹 · {scenario.name}</h2>
+          <h2 className="text-lg font-semibold">空间影响波纹 · 城市温度</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            点击任一{scenario.name === "疫情病例" ? "社区" : "区域"}，模拟一次冲击向邻里扩散。观察 Moran's I 实时变化。
+            点击任一街区，模拟一次"热源冲击"（如新建的工业园）向邻里扩散。观察 Moran's I 实时变化。
           </p>
         </div>
         <div className="text-right">
@@ -378,7 +319,7 @@ function RippleChallenge({ scenario, W }: { scenario: Scenario; W: number[][] })
 }
 
 // ============ 挑战 3：绘制聚集（目标 I）============
-function PaintChallenge({ scenario, W, award }: { scenario: Scenario; W: number[][]; award: (n: number) => void }) {
+function PaintChallenge({ W, award }: { W: number[][]; award: (n: number) => void }) {
   const [vals, setVals] = useState<number[]>(() => Array(TOTAL).fill(50));
   const [target] = useState(0.45);
   const [tolerance] = useState(0.05);
@@ -502,7 +443,7 @@ function PaintChallenge({ scenario, W, award }: { scenario: Scenario; W: number[
 }
 
 // ============ 挑战 4：平滑实验 ============
-function BlurChallenge({ scenario, W }: { scenario: Scenario; W: number[][] }) {
+function BlurChallenge({ W }: { W: number[][] }) {
   const [seed, setSeed] = useState(42);
   const [blur, setBlur] = useState([0]);
 
@@ -541,7 +482,7 @@ function BlurChallenge({ scenario, W }: { scenario: Scenario; W: number[][] }) {
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 4 / 5 · 机制理解</div>
           <h2 className="text-lg font-semibold">从随机到聚集：平滑过程的秘密</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            真实世界的{scenario.name}并非凭空聚集，而是因为"邻里之间相互影响"。拖动平滑半径，看随机如何被塑造成依赖。
+            真实世界的城市温度并非凭空聚集，而是因为"邻里之间热量相互传导"。拖动平滑半径，看随机如何被塑造成依赖。
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => setSeed((s) => s + 1)}>
@@ -594,7 +535,7 @@ function BlurChallenge({ scenario, W }: { scenario: Scenario; W: number[][] }) {
 }
 
 // ============ 挑战 5：猜数挑战 ============
-function GuessChallenge({ scenario, W, award }: { scenario: Scenario; W: number[][]; award: (n: number) => void }) {
+function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => void }) {
   const [seed, setSeed] = useState(123);
   const [vals, setVals] = useState(() => generateClustered(123, 2));
   const [hidden, setHidden] = useState<number>(() => Math.floor(Math.random() * TOTAL));
@@ -649,7 +590,7 @@ function GuessChallenge({ scenario, W, award }: { scenario: Scenario; W: number[
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 5 / 5 · 实战推理</div>
           <h2 className="text-lg font-semibold">缺失值预测：邻居能告诉你多少？</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            高亮区域的{scenario.name}值被隐藏。利用周围邻居信息，估计它的数值。这就是"地理学第一定律"的实战。
+            高亮区域的温度数值被遮挡。利用周围邻居信息，估计它的数值。这就是"地理学第一定律"的实战。
           </p>
         </div>
         <div className="flex items-center gap-3">
