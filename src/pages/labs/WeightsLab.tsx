@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { GridCity } from "@/components/GridCity";
 import { GRID_SIZE, TOTAL } from "@/lib/spatial";
 import { useAppStore } from "@/store/app";
@@ -763,177 +764,171 @@ function DeliveryAllocator() {
 }
 
 
-// ============ 玩法三：矩阵找茬 ============
-// 故事：实习生构建了一个权重矩阵，犯了几个常见错误。请找出来。
-type Bug = { id: string; label: string; explain: string };
+// ============ 玩法三：矩阵找茬（点击式）============
+// 故事：实习生构建了权重矩阵，犯了几个常见错误。
+// 玩家直接点击矩阵中可疑的格子，弹出选项卡选择问题类型。
+type BugType = {
+  id: string;
+  label: string;
+  short: string; // 短标签，显示在格子上
+  explain: string;
+  emoji: string;
+};
 
-const ALL_BUGS: Bug[] = [
-  { id: "self", label: "对角线非零（自己是自己的邻居）", explain: "权重矩阵规定 wᵢᵢ = 0，区域不能成为自己的邻居。" },
-  { id: "island", label: "某个区域没有任何邻居（孤岛）", explain: "孤岛单元在 Moran's I 计算中会被忽略，应改用 KNN 或扩大阈值。" },
-  { id: "fake", label: "把不相邻的远距离区域设为邻居", explain: "权重应反映实际空间关系，跨城市赋权会污染分析结果。" },
-  { id: "miss", label: "漏掉了真实相邻的邻居", explain: "邻接关系不完整，会低估空间依赖性。" },
-  { id: "asym", label: "矩阵不对称（A→B 是邻居，B→A 不是）", explain: "对于无向邻接关系，W 应该对称：wᵢⱼ = wⱼᵢ。" },
-  { id: "neg", label: "出现负数权重", explain: "标准空间权重应非负；负权重需要特殊设定且很少使用。" },
+const BUG_TYPES: BugType[] = [
+  { id: "self", short: "自邻", label: "对角线非零（自己是自己的邻居）", explain: "权重矩阵规定 wᵢᵢ = 0，区域不能成为自己的邻居。", emoji: "🪞" },
+  { id: "fake", short: "假邻", label: "把不相邻的远距离区域设为邻居", explain: "权重应反映实际空间关系，跨区域赋权会污染分析结果。", emoji: "🛸" },
+  { id: "miss", short: "漏邻", label: "漏掉了真实相邻的邻居", explain: "邻接关系不完整，会低估空间依赖性。", emoji: "🕳️" },
+  { id: "asym", short: "不对称", label: "矩阵不对称（A→B 是邻居，B→A 不是）", explain: "对于无向邻接关系，W 应该对称：wᵢⱼ = wⱼᵢ。", emoji: "↔️" },
+  { id: "neg", short: "负值", label: "出现负数权重", explain: "标准空间权重应非负；负权重需要特殊设定且很少使用。", emoji: "➖" },
+  { id: "island", short: "孤岛", label: "中心区域没有任何邻居（孤岛）", explain: "孤岛单元在 Moran's I 计算中会被忽略，应改用 KNN 或扩大阈值。", emoji: "🏝️" },
 ];
+
+// 每个格子：display(显示值)、isCenter、bugId（如果有问题，标注问题类型；否则 null）
+type BugCell = {
+  id: number;
+  display: string; // 显示文本，如 "0", "1", "0.5", "-0.5"
+  isCenter?: boolean;
+  isNormal?: boolean; // 正常邻居（高亮但无问题）
+  bugId?: string | null; // 此格的真实问题
+};
 
 type BugCase = {
   title: string;
   story: string;
   rule: string;
-  // 显示用的小矩阵示意（5x5），值用文字描述邻居关系
-  cells: { id: number; isCenter?: boolean; isNeighbor?: boolean; weight: number; note?: string }[];
-  bugs: string[]; // bug ids present in this case
+  cells: BugCell[];
+};
+
+// 辅助函数：构建一个 5x5 case
+const buildCase = (overrides: Partial<BugCell>[]): BugCell[] => {
+  const cells: BugCell[] = Array.from({ length: 25 }, (_, i) => ({ id: i, display: "0" }));
+  overrides.forEach((o) => {
+    if (o.id === undefined) return;
+    cells[o.id] = { ...cells[o.id], ...o };
+  });
+  return cells;
 };
 
 const BUG_CASES: BugCase[] = [
   {
     title: "案例 1 · 实习生小李的 Rook 矩阵",
-    story: "小李用 Rook 邻接为中心街区构建权重，但他的矩阵看起来怪怪的……",
+    story: "小李用 Rook 邻接为中心街区构建权重，但他的矩阵看起来怪怪的……找出所有错误格子。",
     rule: "Rook（上下左右）",
-    cells: [
-      { id: 0, weight: 0 },
-      { id: 1, weight: 0 },
-      { id: 2, isNeighbor: true, weight: 1, note: "上邻 ✓" },
-      { id: 3, weight: 0 },
-      { id: 4, weight: 0 },
-      { id: 5, weight: 0 },
-      { id: 6, weight: 0 },
-      { id: 7, weight: 0 },
-      { id: 8, weight: 0 },
-      { id: 9, weight: 0 },
-      { id: 10, isNeighbor: true, weight: 1, note: "左邻 ✓" },
-      { id: 11, weight: 0 },
-      { id: 12, isCenter: true, weight: 0.5, note: "❓ 中心自身" },
-      { id: 13, isNeighbor: true, weight: 1, note: "右邻 ✓" },
-      { id: 14, isNeighbor: true, weight: 1, note: "❓ 远距离" },
-      { id: 15, weight: 0 },
-      { id: 16, weight: 0 },
-      { id: 17, weight: 0 },
-      { id: 18, weight: 0 },
-      { id: 19, weight: 0 },
-      { id: 20, weight: 0 },
-      { id: 21, weight: 0 },
-      { id: 22, weight: 0, note: "下邻被漏掉" },
-      { id: 23, weight: 0 },
-      { id: 24, weight: 0 },
-    ],
-    bugs: ["self", "fake", "miss"],
+    cells: buildCase([
+      { id: 2, display: "1", isNormal: true }, // 上邻 ✓
+      { id: 10, display: "1", isNormal: true }, // 左邻 ✓
+      { id: 12, display: "0.5", isCenter: true, bugId: "self" }, // 中心非零
+      { id: 13, display: "1", isNormal: true }, // 右邻 ✓
+      { id: 14, display: "1", bugId: "fake" }, // 远距离假邻
+      { id: 22, display: "0", bugId: "miss" }, // 下邻被漏
+    ]),
   },
   {
     title: "案例 2 · 距离阈值矩阵",
-    story: "用距离阈值 = 1.0 构建的矩阵，但有一个角落街区似乎被孤立了……",
+    story: "用距离阈值 = 1.0 为角落街区构建矩阵，结果中心格成了孤岛。",
     rule: "距离阈值 d ≤ 1.0",
-    cells: [
-      { id: 0, isCenter: true, weight: 0, note: "❓ 角落中心" },
-      { id: 1, weight: 0, note: "未连接" },
-      { id: 2, weight: 0 },
-      { id: 3, weight: 0 },
-      { id: 4, weight: 0 },
-      { id: 5, weight: 0, note: "未连接" },
-      { id: 6, weight: 0 },
-      { id: 7, weight: 0 },
-      { id: 8, weight: 0 },
-      { id: 9, weight: 0 },
-      { id: 10, weight: 0 },
-      { id: 11, weight: 0 },
-      { id: 12, weight: 0 },
-      { id: 13, weight: 0 },
-      { id: 14, weight: 0 },
-      { id: 15, weight: 0 },
-      { id: 16, weight: 0 },
-      { id: 17, weight: 0 },
-      { id: 18, weight: 0 },
-      { id: 19, weight: 0 },
-      { id: 20, weight: 0 },
-      { id: 21, weight: 0 },
-      { id: 22, weight: 0 },
-      { id: 23, weight: 0 },
-      { id: 24, weight: 0 },
-    ],
-    bugs: ["island"],
+    cells: buildCase([
+      { id: 0, display: "0", isCenter: true, bugId: "island" },
+    ]),
   },
   {
     title: "案例 3 · Queen 矩阵的对称性",
-    story: "用 Queen 邻接构建的矩阵中，A→B 标了邻居，但 B→A 却是 0。还有一个权重出现了奇怪的负数。",
+    story: "Queen 邻接矩阵中藏着负权重 + 不对称问题，请找出来。",
     rule: "Queen（八向）",
-    cells: [
-      { id: 0, weight: 0 },
-      { id: 1, weight: 0 },
-      { id: 2, weight: 0 },
-      { id: 3, weight: 0 },
-      { id: 4, weight: 0 },
-      { id: 5, weight: 0 },
-      { id: 6, isNeighbor: true, weight: 1 },
-      { id: 7, isNeighbor: true, weight: 1 },
-      { id: 8, isNeighbor: true, weight: -0.5, note: "❓ 负权重" },
-      { id: 9, weight: 0 },
-      { id: 10, weight: 0 },
-      { id: 11, isNeighbor: true, weight: 1 },
-      { id: 12, isCenter: true, weight: 0 },
-      { id: 13, weight: 0, note: "❓ A→13=1 但 13→A=0" },
-      { id: 14, weight: 0 },
-      { id: 15, weight: 0 },
-      { id: 16, isNeighbor: true, weight: 1 },
-      { id: 17, isNeighbor: true, weight: 1 },
-      { id: 18, isNeighbor: true, weight: 1 },
-      { id: 19, weight: 0 },
-      { id: 20, weight: 0 },
-      { id: 21, weight: 0 },
-      { id: 22, weight: 0 },
-      { id: 23, weight: 0 },
-      { id: 24, weight: 0 },
-    ],
-    bugs: ["asym", "neg"],
+    cells: buildCase([
+      { id: 6, display: "1", isNormal: true },
+      { id: 7, display: "1", isNormal: true },
+      { id: 8, display: "-0.5", bugId: "neg" }, // 负值
+      { id: 11, display: "1", isNormal: true },
+      { id: 12, display: "0", isCenter: true },
+      { id: 13, display: "0", bugId: "asym" }, // A→13=1 但 13→A=0
+      { id: 16, display: "1", isNormal: true },
+      { id: 17, display: "1", isNormal: true },
+      { id: 18, display: "1", isNormal: true },
+    ]),
   },
 ];
 
 function BugHunt() {
   const award = useAppStore((s) => s.awardXp);
   const [caseIdx, setCaseIdx] = useState(0);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // 玩家标注：cellId -> bugTypeId
+  const [marks, setMarks] = useState<Record<number, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [openCellId, setOpenCellId] = useState<number | null>(null);
 
   const cs = BUG_CASES[caseIdx];
-  const truth = useMemo(() => new Set(cs.bugs), [cs]);
 
-  const togglePick = (id: string) => {
+  // 真实答案：cellId -> bugId
+  const truth = useMemo(() => {
+    const t: Record<number, string> = {};
+    cs.cells.forEach((c) => {
+      if (c.bugId) t[c.id] = c.bugId;
+    });
+    return t;
+  }, [cs]);
+
+  const markCell = (cellId: number, bugId: string) => {
     if (submitted) return;
-    setPicked((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+    setMarks((prev) => ({ ...prev, [cellId]: bugId }));
+    setOpenCellId(null);
+  };
+
+  const clearMark = (cellId: number) => {
+    if (submitted) return;
+    setMarks((prev) => {
+      const next = { ...prev };
+      delete next[cellId];
       return next;
     });
+    setOpenCellId(null);
   };
 
   const submit = () => {
     setSubmitted(true);
-    let correct = 0,
-      wrong = 0;
-    truth.forEach((id) => {
-      if (picked.has(id)) correct++;
+    let correctCells = 0; // 标对了位置
+    let correctLabels = 0; // 位置 + 标签都对
+    let wrongCells = 0; // 标在了正常格子上
+    Object.entries(marks).forEach(([cidStr, bid]) => {
+      const cid = Number(cidStr);
+      if (truth[cid]) {
+        correctCells++;
+        if (truth[cid] === bid) correctLabels++;
+      } else {
+        wrongCells++;
+      }
     });
-    picked.forEach((id) => {
-      if (!truth.has(id)) wrong++;
-    });
-    const pts = Math.max(0, correct * 15 - wrong * 8);
+    const totalBugs = Object.keys(truth).length;
+    const missed = totalBugs - correctCells;
+    const pts = Math.max(0, correctLabels * 20 + (correctCells - correctLabels) * 8 - wrongCells * 10);
     setScore((s) => s + pts);
     award(pts);
-    if (correct === truth.size && wrong === 0) {
+    if (correctLabels === totalBugs && wrongCells === 0) {
       setStreak((s) => s + 1);
-      toast.success(`完美！全部找到 +${pts} XP · 连胜 ${streak + 1}`);
+      toast.success(`完美！全部精准命中 +${pts} XP · 连胜 ${streak + 1} 🔥`);
+    } else if (correctCells === totalBugs && wrongCells === 0) {
+      setStreak(0);
+      toast.message(`+${pts} XP · 位置全对，但 ${totalBugs - correctLabels} 个标签错了`);
     } else {
       setStreak(0);
-      toast.message(`+${pts} XP · 命中 ${correct}/${truth.size}，错选 ${wrong}`);
+      toast.message(`+${pts} XP · 命中 ${correctCells}/${totalBugs}，错标 ${wrongCells}，遗漏 ${missed}`);
     }
   };
 
   const next = () => {
     setCaseIdx((i) => (i + 1) % BUG_CASES.length);
-    setPicked(new Set());
+    setMarks({});
     setSubmitted(false);
+    setOpenCellId(null);
+  };
+
+  const reset = () => {
+    setMarks({});
+    setSubmitted(false);
+    setOpenCellId(null);
   };
 
   return (
@@ -949,6 +944,9 @@ function BugHunt() {
           <p className="text-xs text-muted-foreground mt-1">
             规则：{cs.rule} · {cs.story}
           </p>
+          <p className="text-xs text-primary mt-1.5">
+            👆 直接点击矩阵中可疑的格子，从弹窗中选择问题类型并贴标签。
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {streak > 0 && (
@@ -960,42 +958,119 @@ function BugHunt() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
-        {/* 5x5 示意矩阵 */}
+      <div className="grid lg:grid-cols-[1fr_300px] gap-6 items-start">
+        {/* 5x5 可点击矩阵 */}
         <div className="rounded-lg border border-border p-4 bg-muted/20">
           <div className="text-xs text-muted-foreground mb-3 text-center">
-            中心街区（紫色）的 5×5 邻域权重示意
+            中心街区（紫色）的 5×5 邻域权重示意 · 点击格子标注问题
           </div>
-          <div className="grid grid-cols-5 gap-1.5 max-w-[420px] mx-auto">
+          <div className="grid grid-cols-5 gap-1.5 max-w-[460px] mx-auto">
             {cs.cells.map((c) => {
-              const bg = c.isCenter
-                ? "bg-primary text-primary-foreground border-primary"
-                : c.weight > 0
-                ? "bg-accent/30 border-accent"
-                : c.weight < 0
-                ? "bg-destructive/20 border-destructive"
-                : "bg-background border-border";
+              const mark = marks[c.id];
+              const truthBug = truth[c.id];
+              const weight = parseFloat(c.display);
+              // 基础底色
+              let bg = "bg-background border-border";
+              if (c.isCenter) bg = "bg-primary/20 text-primary-foreground border-primary";
+              else if (weight < 0) bg = "bg-destructive/20 border-destructive";
+              else if (weight > 0) bg = "bg-accent/30 border-accent";
+
+              // 提交后状态覆盖
+              if (submitted) {
+                if (mark && truthBug && mark === truthBug) {
+                  bg = "bg-success/30 border-success"; // 完美命中
+                } else if (mark && truthBug && mark !== truthBug) {
+                  bg = "bg-warning/30 border-warning"; // 位置对、标签错
+                } else if (mark && !truthBug) {
+                  bg = "bg-destructive/30 border-destructive"; // 错标在正常格子
+                } else if (!mark && truthBug) {
+                  bg = "bg-warning/20 border-warning border-dashed"; // 遗漏
+                }
+              } else if (mark) {
+                bg = "bg-primary-soft border-primary";
+              }
+
+              const markedBug = mark ? BUG_TYPES.find((b) => b.id === mark) : null;
+              const truthBugObj = truthBug ? BUG_TYPES.find((b) => b.id === truthBug) : null;
+
               return (
-                <div
+                <Popover
                   key={c.id}
-                  className={`relative aspect-square rounded border-2 ${bg} flex flex-col items-center justify-center text-[11px]`}
-                  title={c.note}
+                  open={openCellId === c.id}
+                  onOpenChange={(o) => setOpenCellId(o ? c.id : null)}
                 >
-                  <span className="font-mono font-semibold">
-                    {c.weight === 0 ? "·" : c.weight}
-                  </span>
-                  {c.note && (
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-warning text-warning-foreground text-[8px] flex items-center justify-center font-bold">
-                      !
-                    </span>
-                  )}
-                </div>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      disabled={submitted}
+                      className={`relative aspect-square rounded border-2 ${bg} flex flex-col items-center justify-center text-[11px] transition-all hover:scale-105 hover:z-10 disabled:hover:scale-100`}
+                    >
+                      <span className="font-mono font-semibold text-foreground">
+                        {c.display === "0" ? "·" : c.display}
+                      </span>
+                      {/* 玩家标记标签 */}
+                      {mark && markedBug && (
+                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1 rounded text-[8px] font-bold whitespace-nowrap bg-primary text-primary-foreground shadow-sm">
+                          {markedBug.emoji}{markedBug.short}
+                        </span>
+                      )}
+                      {/* 提交后：遗漏的真实答案 */}
+                      {submitted && !mark && truthBugObj && (
+                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1 rounded text-[8px] font-bold whitespace-nowrap bg-warning text-warning-foreground shadow-sm">
+                          应为 {truthBugObj.short}
+                        </span>
+                      )}
+                      {/* 中心标识 */}
+                      {c.isCenter && (
+                        <span className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-primary text-primary-foreground text-[8px] flex items-center justify-center font-bold">
+                          C
+                        </span>
+                      )}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-64 p-2" side="top">
+                    <div className="text-[11px] text-muted-foreground mb-2 px-1">
+                      格子 #{c.id} · 值 = {c.display} · 你认为这里是？
+                    </div>
+                    <div className="space-y-1 max-h-64 overflow-y-auto">
+                      {BUG_TYPES.map((b) => (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => markCell(c.id, b.id)}
+                          className={`w-full text-left rounded p-1.5 text-xs transition-colors flex items-start gap-2 ${
+                            mark === b.id
+                              ? "bg-primary text-primary-foreground"
+                              : "hover:bg-muted"
+                          }`}
+                        >
+                          <span className="text-base leading-none">{b.emoji}</span>
+                          <div className="flex-1">
+                            <div className="font-semibold">{b.short}</div>
+                            <div className={`text-[10px] leading-tight mt-0.5 ${mark === b.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                              {b.label}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                      {mark && (
+                        <button
+                          type="button"
+                          onClick={() => clearMark(c.id)}
+                          className="w-full text-left rounded p-1.5 text-[11px] text-muted-foreground hover:bg-muted border-t border-border mt-1 pt-2"
+                        >
+                          ✕ 清除此格标记
+                        </button>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               );
             })}
           </div>
-          <div className="mt-3 flex flex-wrap gap-3 justify-center text-[10px] text-muted-foreground">
+          <div className="mt-4 flex flex-wrap gap-3 justify-center text-[10px] text-muted-foreground">
             <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-primary" /> 中心
+              <span className="w-2.5 h-2.5 rounded bg-primary/20 border border-primary" /> 中心
             </span>
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded bg-accent/30 border border-accent" /> 正权重
@@ -1003,67 +1078,88 @@ function BugHunt() {
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded bg-destructive/20 border border-destructive" /> 负权重
             </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-warning" /> 可疑标记
-            </span>
+            {submitted && (
+              <>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-success/30 border border-success" /> 完美命中
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-warning/30 border border-warning" /> 位置对/标签错
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded bg-destructive/30 border border-destructive" /> 错标
+                </span>
+              </>
+            )}
           </div>
         </div>
 
         <div className="space-y-3">
-          <div className="text-xs text-muted-foreground">
-            勾选所有你认为有问题的地方（可能不止一个）：
+          {/* 进度面板 */}
+          <div className="rounded-md border-2 border-primary/40 bg-primary-soft/40 p-3">
+            <div className="text-xs text-muted-foreground mb-1">已标注</div>
+            <div className="text-2xl font-bold font-mono text-primary">
+              {Object.keys(marks).length} <span className="text-sm text-muted-foreground">个格子</span>
+            </div>
           </div>
-          {ALL_BUGS.map((b) => {
-            const isPicked = picked.has(b.id);
-            const isTruth = truth.has(b.id);
-            let cls = "border-border hover:border-primary/50 bg-background";
-            if (submitted) {
-              if (isTruth && isPicked) cls = "border-success bg-success/10";
-              else if (isTruth && !isPicked) cls = "border-warning bg-warning/10";
-              else if (!isTruth && isPicked) cls = "border-destructive bg-destructive/10";
-              else cls = "border-border opacity-50";
-            } else if (isPicked) {
-              cls = "border-primary bg-primary-soft";
-            }
-            return (
-              <button
-                key={b.id}
-                onClick={() => togglePick(b.id)}
-                disabled={submitted}
-                className={`w-full text-left rounded-md border-2 p-2.5 text-xs transition-all ${cls}`}
-              >
-                <div className="flex items-start gap-2">
-                  {submitted && isTruth && isPicked && (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-success mt-0.5 flex-shrink-0" />
-                  )}
-                  {submitted && !isTruth && isPicked && (
-                    <XCircle className="h-3.5 w-3.5 text-destructive mt-0.5 flex-shrink-0" />
-                  )}
-                  <div>
-                    <div className="font-medium">{b.label}</div>
-                    {submitted && isTruth && (
-                      <div className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
-                        💡 {b.explain}
-                      </div>
-                    )}
-                  </div>
+
+          {/* 标签图例 */}
+          <div className="rounded-md border border-border bg-background p-2.5 space-y-1.5">
+            <div className="text-[11px] font-semibold text-muted-foreground mb-1">📚 问题类型速查</div>
+            {BUG_TYPES.map((b) => (
+              <div key={b.id} className="flex items-start gap-2 text-[11px]">
+                <span className="text-base leading-none mt-0.5">{b.emoji}</span>
+                <div className="flex-1">
+                  <span className="font-semibold">{b.short}</span>
+                  <span className="text-muted-foreground"> · {b.label}</span>
                 </div>
-              </button>
-            );
-          })}
+              </div>
+            ))}
+          </div>
+
+          {/* 提交后：详细答案解释 */}
+          {submitted && (
+            <div className="rounded-md border border-border bg-background p-2.5 space-y-2">
+              <div className="text-[11px] font-semibold">📖 答案解析</div>
+              {Object.entries(truth).map(([cidStr, bid]) => {
+                const cid = Number(cidStr);
+                const b = BUG_TYPES.find((x) => x.id === bid)!;
+                const userMark = marks[cid];
+                const status =
+                  userMark === bid
+                    ? { txt: "✓ 完美", cls: "text-success" }
+                    : userMark
+                    ? { txt: "△ 标错类型", cls: "text-warning" }
+                    : { txt: "✗ 遗漏", cls: "text-destructive" };
+                return (
+                  <div key={cid} className="text-[11px] border-l-2 border-border pl-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-mono">
+                        格子 #{cid} {b.emoji} {b.short}
+                      </span>
+                      <span className={`font-bold ${status.cls}`}>{status.txt}</span>
+                    </div>
+                    <div className="text-muted-foreground leading-relaxed mt-0.5">
+                      💡 {b.explain}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {!submitted ? (
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setPicked(new Set())}>
+              <Button variant="ghost" size="sm" onClick={reset}>
                 <RotateCcw className="h-3.5 w-3.5 mr-1" /> 清空
               </Button>
-              <Button onClick={submit} disabled={picked.size === 0}>
+              <Button onClick={submit} disabled={Object.keys(marks).length === 0}>
                 <Search className="h-3.5 w-3.5 mr-1" /> 提交
               </Button>
             </div>
           ) : (
             <Button onClick={next} className="w-full">
-              下一案例
+              下一案例 →
             </Button>
           )}
 
@@ -1078,3 +1174,4 @@ function BugHunt() {
     </Card>
   );
 }
+
