@@ -100,7 +100,7 @@ export default function DependencyLab() {
 }
 
 // ============ 挑战 1：找出聚集 ============
-function SpotChallenge({ scenario, W, award }: { scenario: Scenario; W: number[][]; award: (n: number) => void }) {
+function SpotChallenge({ W, award }: { W: number[][]; award: (n: number) => void }) {
   const [seed, setSeed] = useState(7);
   const [chosen, setChosen] = useState<number | null>(null);
   const [revealed, setRevealed] = useState(false);
