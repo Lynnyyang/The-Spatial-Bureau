@@ -174,23 +174,35 @@ function InfluenceMixer() {
   const sumOk = sumWeights >= level.targetSum.min && sumWeights <= level.targetSum.max;
   const passed = reachedOk && sumOk;
 
-  // 自动通关：第一次满足条件时奖励 + 标记
-  useMemo(() => {
-    if (passed && !cleared[levelIdx]) {
-      const next = [...cleared];
-      next[levelIdx] = true;
-      setCleared(next);
-      award(30);
-      toast.success(`🎉 ${level.title} 通关！+30 XP`);
+  const [attempts, setAttempts] = useState(0);
+
+  const submit = () => {
+    setAttempts((n) => n + 1);
+    if (!passed) {
+      const msgs: string[] = [];
+      if (!reachedOk) msgs.push(`被影响街区 ${reachedCount}，目标 ${level.targetReached.min}-${level.targetReached.max}`);
+      if (!sumOk) msgs.push(`权重总和 ${sumWeights.toFixed(2)}，目标 ${level.targetSum.min.toFixed(1)}-${level.targetSum.max.toFixed(1)}`);
+      toast.error(`未达成 · ${msgs.join(" · ")}`);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [passed]);
+    if (cleared[levelIdx]) {
+      toast.message("本关已通过，可直接进入下一关");
+      return;
+    }
+    const next = [...cleared];
+    next[levelIdx] = true;
+    setCleared(next);
+    const bonus = attempts === 0 ? 10 : 0;
+    award(30 + bonus);
+    toast.success(`🎉 ${level.title} 通关！+${30 + bonus} XP${bonus ? " · 一次过奖励" : ""}`);
+  };
 
   const goNext = () => {
     if (levelIdx < LEVELS.length - 1) {
       setLevelIdx((i) => i + 1);
       setRadius([2]);
       setDecay([1.0]);
+      setAttempts(0);
     }
   };
 
@@ -287,21 +299,32 @@ function InfluenceMixer() {
               </span>
             </div>
           </div>
-          {passed ? (
-            <div className="mt-2 flex gap-2">
-              {levelIdx < LEVELS.length - 1 ? (
-                <Button size="sm" onClick={goNext} className="flex-1">
-                  进入下一关 →
+          <div className="mt-3 space-y-2">
+            {cleared[levelIdx] ? (
+              levelIdx < LEVELS.length - 1 ? (
+                <Button size="sm" onClick={goNext} className="w-full">
+                  ✓ 已通关 · 进入下一关 →
                 </Button>
               ) : (
                 <Badge variant="secondary" className="w-full justify-center py-1.5">
                   🏆 全部关卡通关！
                 </Badge>
-              )}
-            </div>
-          ) : (
-            <div className="mt-2 text-[11px] text-muted-foreground italic">💡 {level.hint}</div>
-          )}
+              )
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  onClick={submit}
+                  className="w-full"
+                  variant={passed ? "default" : "outline"}
+                >
+                  <Target className="h-3.5 w-3.5 mr-1" />
+                  {passed ? "提交方案 · 完美达成！" : `提交方案${attempts > 0 ? ` · 第 ${attempts + 1} 次` : ""}`}
+                </Button>
+                <div className="text-[11px] text-muted-foreground italic">💡 {level.hint}</div>
+              </>
+            )}
+          </div>
         </Card>
 
         {/* 情境说明 */}
