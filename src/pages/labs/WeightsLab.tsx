@@ -40,7 +40,7 @@ export default function WeightsLab() {
       <Tabs defaultValue="influence" className="w-full">
         <TabsList className="grid grid-cols-3 w-full">
           <TabsTrigger value="influence">📣 影响力调音台</TabsTrigger>
-          <TabsTrigger value="delivery">🏘️ 房价涟漪效应</TabsTrigger>
+          <TabsTrigger value="delivery">🌊 高阶邻居探秘</TabsTrigger>
           <TabsTrigger value="bug">🔍 矩阵找茬</TabsTrigger>
         </TabsList>
 
@@ -48,7 +48,7 @@ export default function WeightsLab() {
           <InfluenceMixer />
         </TabsContent>
         <TabsContent value="delivery" className="mt-4">
-          <HousingRipple />
+          <HigherOrderLab />
         </TabsContent>
         <TabsContent value="bug" className="mt-4">
           <BugHunt />
