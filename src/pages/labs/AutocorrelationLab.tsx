@@ -128,8 +128,10 @@ export default function AutocorrelationLab() {
     {
       id: "find-outlier",
       title: "第五步 · 揪出空间异常 (HL / LH)",
-      prompt: `异常点"鹤立鸡群"或"凤凰落鸡窝"——与邻居相反。请点击一个 HL 或 LH 单元。共 ${ctx.outlierSet.size} 个候选。`,
-      hint: "HL：高值落在低值海洋中（橙色）；LH：低值陷在高值丛林中（黄色）。",
+      prompt: ctx.outlierSet.size > 0
+        ? `异常点"鹤立鸡群"或"凤凰落鸡窝"——与邻居相反。请点击一个 HL 或 LH 单元。共 ${ctx.outlierSet.size} 个候选。`
+        : `本组数据空间结构非常"干净"，没有出现显著的 HL/LH 异常点。点击下方按钮直接结业，或换一组数据再挑战。`,
+      hint: "HL：高值落在低值海洋中（橙色）；LH：低值陷在高值丛林中（黄色）。若一个都没有，说明聚集非常规整。",
       type: "pick",
       validate: (a, c) => typeof a === "number" && c.outlierSet.has(a),
       feedback: (ok) => (ok ? "出色！异常点往往揭示局部特殊机制。" : "目标是 HL 或 LH 颜色的单元。"),
