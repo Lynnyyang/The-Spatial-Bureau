@@ -642,6 +642,10 @@ function HigherOrderLab() {
                   key={i}
                   onClick={() => {
                     if (i === source) return;
+                    if (challenge && (challenge.kind === "max2" || challenge.kind === "onlyVia2") && !feedback) {
+                      submitAnswer(i);
+                      return;
+                    }
                     setTarget(target === i ? null : i);
                   }}
                   onDoubleClick={() => onPickSource(i)}
