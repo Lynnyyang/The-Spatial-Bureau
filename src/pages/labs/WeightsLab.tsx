@@ -67,10 +67,56 @@ export default function WeightsLab() {
 // 故事：选一个"网红咖啡店"街区，调节它对邻居的影响半径与衰减强度，
 // 看周围街区的"咖啡热度"如何被点亮。
 function InfluenceMixer() {
+  const award = useAppStore((s) => s.awardXp);
+
+  // ---- 关卡定义 ----
+  // 每关给定情境 + 目标（被影响街区数 + 权重总和范围）+ 任务描述
+  const LEVELS = [
+    {
+      scenario: "coffee" as const,
+      title: "第 1 关 · 小范围试营业",
+      brief:
+        "网红咖啡店刚开业，老板想先做小范围测试：精准影响 4 个最近的邻居街区，且总扩散力（权重总和）控制在 2.5 ~ 3.5 之间。",
+      targetReached: { min: 4, max: 4 },
+      targetSum: { min: 2.5, max: 3.5 },
+      hint: "提示：试试半径=1.0，让影响只覆盖正东南西北 4 格。",
+    },
+    {
+      scenario: "wifi" as const,
+      title: "第 2 关 · 5G 信号覆盖",
+      brief:
+        "新基站要求覆盖 8 个邻居街区，且因为信号衰减很快，权重总和应在 3.5 ~ 4.5 之间。",
+      targetReached: { min: 8, max: 8 },
+      targetSum: { min: 3.5, max: 4.5 },
+      hint: "提示：半径放大到能覆盖 Queen 八向（约 1.5），再调 α 让衰减明显。",
+    },
+    {
+      scenario: "rumor" as const,
+      title: "第 3 关 · 全城八卦",
+      brief:
+        "这条八卦极度劲爆，要让 ≥ 20 个街区知晓，但因为越远越模糊，权重总和必须 ≤ 8。",
+      targetReached: { min: 20, max: 99 },
+      targetSum: { min: 0, max: 8 },
+      hint: "提示：把半径开大（≥3），并增大 α 让远处衰减更快、总权重不至于爆炸。",
+    },
+    {
+      scenario: "coffee" as const,
+      title: "第 4 关 · 平等的邻里",
+      brief:
+        "老板希望影响范围内每个街区都获得几乎相同的热度（不要因距离打折）。覆盖恰好 12 个邻居，权重总和约 12（每个 ≈ 1）。",
+      targetReached: { min: 12, max: 12 },
+      targetSum: { min: 11, max: 13 },
+      hint: "提示：α 越接近 0，距离的影响越弱，所有邻居权重趋于相等。",
+    },
+  ];
+
+  const [levelIdx, setLevelIdx] = useState(0);
+  const level = LEVELS[levelIdx];
+
   const [center, setCenter] = useState(27);
   const [radius, setRadius] = useState([2]);
   const [decay, setDecay] = useState([1.0]);
-  const [scenario, setScenario] = useState<"coffee" | "wifi" | "rumor">("coffee");
+  const [cleared, setCleared] = useState<boolean[]>(() => LEVELS.map(() => false));
 
   const SCENARIOS = {
     coffee: {
@@ -93,7 +139,7 @@ function InfluenceMixer() {
     },
   } as const;
 
-  const sc = SCENARIOS[scenario];
+  const sc = SCENARIOS[level.scenario];
   const Icon = sc.icon;
 
   // 计算每个格子受到 center 的影响值
@@ -122,8 +168,40 @@ function InfluenceMixer() {
   const reachedCount = values.filter((v) => v > 0 && v < 100).length;
   const sumWeights = values.reduce((a, v, i) => (i === center ? a : a + v / 100), 0);
 
+  // 判定
+  const reachedOk =
+    reachedCount >= level.targetReached.min && reachedCount <= level.targetReached.max;
+  const sumOk = sumWeights >= level.targetSum.min && sumWeights <= level.targetSum.max;
+  const passed = reachedOk && sumOk;
+
+  // 自动通关：第一次满足条件时奖励 + 标记
+  useMemo(() => {
+    if (passed && !cleared[levelIdx]) {
+      const next = [...cleared];
+      next[levelIdx] = true;
+      setCleared(next);
+      award(30);
+      toast.success(`🎉 ${level.title} 通关！+30 XP`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [passed]);
+
+  const goNext = () => {
+    if (levelIdx < LEVELS.length - 1) {
+      setLevelIdx((i) => i + 1);
+      setRadius([2]);
+      setDecay([1.0]);
+    }
+  };
+
+  const reset = () => {
+    setRadius([2]);
+    setDecay([1.0]);
+    setCenter(27);
+  };
+
   return (
-    <div className="grid lg:grid-cols-[1fr_340px] gap-6">
+    <div className="grid lg:grid-cols-[1fr_360px] gap-6">
       <Card className="p-5 shadow-panel border-border/60">
         <div className="flex items-center justify-between mb-3">
           <div className="text-xs font-mono tracking-wider text-muted-foreground">
@@ -142,37 +220,102 @@ function InfluenceMixer() {
       </Card>
 
       <div className="space-y-4">
-        <Card className="p-4 shadow-panel border-border/60">
-          <div className="text-xs font-mono tracking-wider text-muted-foreground mb-2">
-            选择情境
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {(Object.keys(SCENARIOS) as Array<keyof typeof SCENARIOS>).map((id) => {
-              const s = SCENARIOS[id];
-              const SIcon = s.icon;
-              const active = scenario === id;
-              return (
+        {/* 关卡卡片 */}
+        <Card
+          className={`p-4 shadow-panel border-2 transition-colors ${
+            passed ? "border-success bg-success/5" : "border-primary/40 bg-primary-soft/40"
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {LEVELS.map((_, i) => (
                 <button
-                  key={id}
-                  onClick={() => setScenario(id)}
-                  className={`flex flex-col items-center gap-1 rounded-md border p-2 text-xs transition-all ${
-                    active
-                      ? "border-primary bg-primary-soft text-primary"
-                      : "border-border hover:border-primary/50"
+                  key={i}
+                  onClick={() => setLevelIdx(i)}
+                  className={`w-6 h-6 rounded text-[11px] font-mono font-bold transition-all ${
+                    i === levelIdx
+                      ? "bg-primary text-primary-foreground"
+                      : cleared[i]
+                      ? "bg-success/20 text-success border border-success"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                 >
-                  <SIcon className="h-4 w-4" />
-                  <span>{s.name}</span>
+                  {cleared[i] ? "✓" : i + 1}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            {passed && <Trophy className="h-4 w-4 text-success" />}
           </div>
-          <div className="mt-3 rounded-md bg-muted/40 p-2 text-xs leading-relaxed text-muted-foreground flex gap-2">
+          <div className="text-sm font-semibold mb-1.5">{level.title}</div>
+          <p className="text-xs text-muted-foreground leading-relaxed mb-2">{level.brief}</p>
+          <div className="rounded bg-background/60 border border-border p-2 text-[11px] font-mono space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">🎯 被影响街区</span>
+              <span className="flex items-center gap-1">
+                <span className={reachedOk ? "text-success font-bold" : "text-foreground"}>
+                  {reachedCount}
+                </span>
+                <span className="text-muted-foreground">
+                  /{" "}
+                  {level.targetReached.min === level.targetReached.max
+                    ? level.targetReached.min
+                    : level.targetReached.max >= 99
+                    ? `≥${level.targetReached.min}`
+                    : `${level.targetReached.min}-${level.targetReached.max}`}
+                </span>
+                {reachedOk ? (
+                  <CheckCircle2 className="h-3 w-3 text-success" />
+                ) : (
+                  <XCircle className="h-3 w-3 text-muted-foreground" />
+                )}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">⚖️ 权重总和</span>
+              <span className="flex items-center gap-1">
+                <span className={sumOk ? "text-success font-bold" : "text-foreground"}>
+                  {sumWeights.toFixed(2)}
+                </span>
+                <span className="text-muted-foreground">
+                  / {level.targetSum.min.toFixed(1)}-{level.targetSum.max.toFixed(1)}
+                </span>
+                {sumOk ? (
+                  <CheckCircle2 className="h-3 w-3 text-success" />
+                ) : (
+                  <XCircle className="h-3 w-3 text-muted-foreground" />
+                )}
+              </span>
+            </div>
+          </div>
+          {passed ? (
+            <div className="mt-2 flex gap-2">
+              {levelIdx < LEVELS.length - 1 ? (
+                <Button size="sm" onClick={goNext} className="flex-1">
+                  进入下一关 →
+                </Button>
+              ) : (
+                <Badge variant="secondary" className="w-full justify-center py-1.5">
+                  🏆 全部关卡通关！
+                </Badge>
+              )}
+            </div>
+          ) : (
+            <div className="mt-2 text-[11px] text-muted-foreground italic">💡 {level.hint}</div>
+          )}
+        </Card>
+
+        {/* 情境说明 */}
+        <Card className="p-3 shadow-panel border-border/60">
+          <div className="rounded-md bg-muted/40 p-2 text-xs leading-relaxed text-muted-foreground flex gap-2">
             <Icon className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-primary" />
-            <span>{sc.story}</span>
+            <span>
+              <strong className="text-foreground">{sc.name}：</strong>
+              {sc.story}
+            </span>
           </div>
         </Card>
 
+        {/* 调音台 */}
         <Card className="p-4 shadow-panel border-border/60 space-y-4">
           <div>
             <div className="flex justify-between items-center mb-2">
@@ -199,25 +342,13 @@ function InfluenceMixer() {
               α 越大，{sc.unit}下降越快；α=0 表示半径内所有邻居影响相同。
             </p>
           </div>
-        </Card>
 
-        <Card className="p-4 shadow-panel border-border/60">
-          <div className="text-xs text-muted-foreground mb-2">实时反馈</div>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <div className="text-xs text-muted-foreground">被影响街区</div>
-              <div className="text-2xl font-bold font-mono text-primary">{reachedCount}</div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">权重总和</div>
-              <div className="text-2xl font-bold font-mono">{sumWeights.toFixed(2)}</div>
-            </div>
-          </div>
-          <div className="mt-3 rounded-md bg-primary-soft p-2.5 text-[11px] text-primary leading-relaxed">
-            💡 <strong>权重总和</strong>就是这一行 W 矩阵之和。行标准化时，所有权重会按比例缩放，使总和=1。
-          </div>
+          <Button variant="ghost" size="sm" onClick={reset} className="w-full">
+            <RotateCcw className="h-3.5 w-3.5 mr-1" /> 重置参数
+          </Button>
         </Card>
       </div>
+
     </div>
   );
 }
