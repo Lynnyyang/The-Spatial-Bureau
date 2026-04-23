@@ -861,6 +861,93 @@ function HigherOrderLab() {
             )}
           </Card>
 
+          {/* 🎯 挑战模式 */}
+          <Card className="p-4 shadow-panel border-2 border-primary/40 bg-primary-soft/20">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Trophy className="h-4 w-4 text-primary" />
+                <span className="font-semibold text-sm">高阶挑战</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] font-mono">
+                <Badge variant="secondary">解锁 {solved}</Badge>
+                <Badge className={streak > 0 ? "bg-success text-success-foreground hover:bg-success" : ""}>
+                  连胜 {streak}
+                </Badge>
+              </div>
+            </div>
+
+            {!challenge ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  随机出题考察你对 W¹ 与 W² 的理解。答对 +XP（连胜越长奖励越多），答错重置连胜。
+                </p>
+                <Button size="sm" onClick={nextChallenge} className="w-full">
+                  <Sparkles className="h-3.5 w-3.5 mr-1" /> 开始挑战
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div
+                  className="rounded bg-background/70 border border-border p-2 text-xs leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: challenge.prompt }}
+                />
+
+                {challenge.kind === "countPaths" && challenge.options && (
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {challenge.options.map((opt) => (
+                      <Button
+                        key={opt}
+                        size="sm"
+                        variant={
+                          feedback
+                            ? opt === challenge.answer
+                              ? "default"
+                              : "outline"
+                            : "outline"
+                        }
+                        disabled={!!feedback}
+                        onClick={() => submitAnswer(opt)}
+                        className={
+                          feedback && opt === challenge.answer
+                            ? "bg-success text-success-foreground hover:bg-success"
+                            : ""
+                        }
+                      >
+                        {opt}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+
+                {feedback && (
+                  <div
+                    className={`rounded p-2 text-xs leading-relaxed border ${
+                      feedback.ok
+                        ? "bg-success/10 border-success/40 text-success"
+                        : "bg-destructive/10 border-destructive/40 text-destructive"
+                    }`}
+                  >
+                    {feedback.msg}
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={nextChallenge} className="flex-1">
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                    {feedback ? "下一题" : "换一题"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setChallenge(null); setFeedback(null); }}
+                  >
+                    退出
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+
           {/* 教学提示 */}
           <Card className="p-3 shadow-panel border-border/60 bg-muted/20">
             <div className="text-[11px] leading-relaxed text-muted-foreground space-y-1">
