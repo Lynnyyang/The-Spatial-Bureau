@@ -371,266 +371,397 @@ function InfluenceMixer() {
   );
 }
 
-// ============ 玩法二：配送权重分配（简化版） ============
-// 故事：你是快递站长，只有 4 个固定邻居（上下左右）。
-// 看每个邻居的"订单数"（用大表情和数字直观表示），把 100% 运力分给他们。
-// 每张邻居卡片可以点击查看提示，点"自动均衡"直接套用最优分配。
+// ============ 玩法二：嘉年华人流疏导 🎪 ============
+// 故事：你是嘉年华的入口指挥官，每条道路通往一个邻居场地（餐厅/停车场/酒店等），
+// 每个场地有不同的"接待容量"。你为每条道路设置权重（拖滑杆），
+// 入口的人流会按权重比例流向各场地。超过容量的场地会变红警告！
+// 交互：① 拖滑杆调权重 ② 点场地卡片看详情 ③ 切换 Rook/Queen 邻接看连接变化
+// ④ 一键最优分配 ⑤ 实时人流动画 ⑥ 多轮关卡 ⑦ 行标准化矩阵实时显示
 function DeliveryAllocator() {
   const award = useAppStore((s) => s.awardXp);
   const [round, setRound] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
-  const [hintIdx, setHintIdx] = useState<number | null>(null);
+  const [rule, setRule] = useState<"rook" | "queen">("queen");
+  const [pickedIdx, setPickedIdx] = useState<number | null>(null);
 
-  // 4 个固定方向的邻居，订单数按 round 变化
+  const center = 27; // 入口固定在中心
+
+  // 关卡：每关人流量 + 各场地容量配置（按方向：N, NE, E, SE, S, SW, W, NW）
   const ROUNDS = [
-    { center: 27, orders: [80, 20, 40, 60], story: "周一早高峰：北边写字楼订单爆发！" },
-    { center: 27, orders: [30, 30, 90, 50], story: "周末：南边商场客流最大。" },
-    { center: 27, orders: [55, 45, 55, 45], story: "平峰时段：四个方向需求接近。" },
-    { center: 27, orders: [10, 70, 20, 100], story: "节日大促：南边 & 东边一起爆单！" },
+    {
+      title: "周五傍晚 · 中等人流",
+      crowd: 600,
+      capacities: [200, 80, 150, 60, 220, 70, 180, 90],
+      icons: ["🍔", "🅿️", "🎡", "🎪", "🏨", "🎭", "🍜", "🎠"],
+      names: ["美食街", "停车场A", "摩天轮", "马戏帐篷", "大酒店", "剧场", "面馆", "旋转木马"],
+    },
+    {
+      title: "周六中午 · 大客流来袭",
+      crowd: 1200,
+      capacities: [350, 120, 280, 100, 400, 150, 320, 130],
+      icons: ["🍔", "🅿️", "🎡", "🎪", "🏨", "🎭", "🍜", "🎠"],
+      names: ["美食街", "停车场A", "摩天轮", "马戏帐篷", "大酒店", "剧场", "面馆", "旋转木马"],
+    },
+    {
+      title: "节日烟花夜 · 极限调度",
+      crowd: 2000,
+      capacities: [500, 180, 600, 150, 700, 200, 480, 220],
+      icons: ["🍔", "🅿️", "🎡", "🎪", "🏨", "🎭", "🍜", "🎠"],
+      names: ["美食街", "停车场A", "摩天轮", "马戏帐篷", "大酒店", "剧场", "面馆", "旋转木马"],
+    },
   ];
-
   const cur = ROUNDS[round % ROUNDS.length];
-  const center = cur.center;
-  const DIRS = [
-    { label: "北 ↑", offset: -GRID_SIZE, emoji: "🏢", desc: "北边街区" },
-    { label: "西 ←", offset: -1, emoji: "🏪", desc: "西边街区" },
-    { label: "南 ↓", offset: GRID_SIZE, emoji: "🛍️", desc: "南边街区" },
-    { label: "东 →", offset: 1, emoji: "🏬", desc: "东边街区" },
+
+  // 8 个方向偏移（Queen 邻接顺序：N, NE, E, SE, S, SW, W, NW）
+  const ALL_DIRS = [
+    { label: "北 ↑", offset: -GRID_SIZE, isDiag: false },
+    { label: "东北 ↗", offset: -GRID_SIZE + 1, isDiag: true },
+    { label: "东 →", offset: 1, isDiag: false },
+    { label: "东南 ↘", offset: GRID_SIZE + 1, isDiag: true },
+    { label: "南 ↓", offset: GRID_SIZE, isDiag: false },
+    { label: "西南 ↙", offset: GRID_SIZE - 1, isDiag: true },
+    { label: "西 ←", offset: -1, isDiag: false },
+    { label: "西北 ↖", offset: -GRID_SIZE - 1, isDiag: true },
   ];
-  const neighbors = DIRS.map((d) => center + d.offset);
-  const orders = cur.orders;
 
-  // 真实的最优比例
-  const truthRatios = useMemo(() => {
-    const sum = orders.reduce((a, b) => a + b, 0) || 1;
-    return orders.map((v) => v / sum);
-  }, [orders]);
+  // 根据规则筛选活动方向
+  const activeIdxs = ALL_DIRS.map((_, i) => i).filter((i) =>
+    rule === "queen" ? true : !ALL_DIRS[i].isDiag
+  );
+  const N = activeIdxs.length; // rook=4, queen=8
 
-  // 玩家分配：默认平均
-  const [allocation, setAllocation] = useState<number[]>([25, 25, 25, 25]);
+  // 玩家权重（每个活动方向 0-10，平均初始）
+  const [weights, setWeights] = useState<number[]>(() => Array(8).fill(5));
 
-  const total = allocation.reduce((a, b) => a + b, 0);
-  const valid = total === 100;
+  // 切换规则时重置权重
+  const onRuleChange = (r: "rook" | "queen") => {
+    setRule(r);
+    setWeights(Array(8).fill(5));
+    setSubmitted(false);
+    setPickedIdx(null);
+  };
 
-  const updateAlloc = (idx: number, v: number) => {
-    setAllocation((prev) => {
+  const updateWeight = (idx: number, v: number) => {
+    setWeights((prev) => {
       const next = [...prev];
       next[idx] = v;
       return next;
     });
   };
 
-  const autoBalance = () => {
-    // 按订单比例自动分配，并取整后修正使总和=100
-    const raw = truthRatios.map((r) => r * 100);
-    const rounded = raw.map((v) => Math.round(v));
-    const diff = 100 - rounded.reduce((a, b) => a + b, 0);
-    if (diff !== 0) {
-      // 把误差给订单最大的那个
-      const maxIdx = orders.indexOf(Math.max(...orders));
-      rounded[maxIdx] += diff;
-    }
-    setAllocation(rounded);
-    toast.message("已套用按订单比例的最优分配 ✨");
-  };
+  // 行标准化：只在活动方向中归一化
+  const sumActive = activeIdxs.reduce((a, i) => a + weights[i], 0) || 1;
+  const normalized = ALL_DIRS.map((_, i) =>
+    activeIdxs.includes(i) ? weights[i] / sumActive : 0
+  );
 
-  const showHint = (idx: number) => {
-    setHintIdx(idx);
-    const ratio = (truthRatios[idx] * 100).toFixed(0);
-    const o = orders[idx];
-    const total = orders.reduce((a, b) => a + b, 0);
-    toast.message(
-      `${DIRS[idx].label} 订单 ${o} / 全部 ${total} → 应分配约 ${ratio}%`,
-      { description: `订单越多，权重越大。这就是 wᵢⱼ = 邻居j订单 / 所有邻居订单总和。` }
-    );
-  };
+  // 实际流入各场地的人数
+  const flow = normalized.map((w) => Math.round(w * cur.crowd));
 
-  // 地图：中心紫色，邻居按订单数着色
-  const mapValues = useMemo(() => {
-    const out = new Array(TOTAL).fill(0);
-    neighbors.forEach((j, idx) => {
-      out[j] = orders[idx];
+  // 超载场地数
+  const overloaded = activeIdxs.filter((i) => flow[i] > cur.capacities[i]);
+  const overloadCount = overloaded.length;
+
+  // 利用率（接近 1 是好事，>1 = 超载）
+  const utilization = activeIdxs.map((i) => flow[i] / cur.capacities[i]);
+  const avgUtil =
+    utilization.reduce((a, b) => a + b, 0) / utilization.length;
+
+  // 一键最优：按容量比例分配
+  const autoOptimize = () => {
+    const totalCap = activeIdxs.reduce((a, i) => a + cur.capacities[i], 0);
+    const next = [...weights];
+    activeIdxs.forEach((i) => {
+      next[i] = Math.round((cur.capacities[i] / totalCap) * 50);
     });
-    out[center] = 100;
-    return out;
-  }, [neighbors, orders, center]);
+    // 非活动方向清零
+    ALL_DIRS.forEach((_, i) => {
+      if (!activeIdxs.includes(i)) next[i] = 0;
+    });
+    setWeights(next);
+    toast.message("已套用容量比例最优方案 ✨", {
+      description: "权重 ∝ 场地容量，让每个场地利用率接近 100%。",
+    });
+  };
 
-  const colorOf = (i: number) => {
-    if (i === center) return "hsl(var(--primary))";
-    if (!neighbors.includes(i)) return "hsl(var(--muted))";
-    return "";
+  const reset = () => {
+    setWeights(Array(8).fill(5));
+    setSubmitted(false);
+    setPickedIdx(null);
+  };
+
+  // 点击场地卡片：显示详细分析
+  const showDetail = (idx: number) => {
+    setPickedIdx(idx);
+    const cap = cur.capacities[idx];
+    const flo = flow[idx];
+    const w = (normalized[idx] * 100).toFixed(1);
+    const status = flo > cap ? `⚠️ 超载 ${flo - cap} 人！` : `✅ 还可接 ${cap - flo} 人`;
+    toast.message(`${cur.icons[idx]} ${cur.names[idx]}`, {
+      description: `权重 ${w}% → 流入 ${flo} 人 / 容量 ${cap} 人 · ${status}`,
+    });
   };
 
   const submit = () => {
-    if (!valid) {
-      toast.error(`总和必须 = 100%（当前 ${total}%）`);
-      return;
-    }
     setSubmitted(true);
-    const err = allocation.reduce(
-      (acc, v, i) => acc + Math.abs(v / 100 - truthRatios[i]),
-      0
-    );
-    const pts = Math.max(5, Math.round(40 - err * 60));
+    // 评分：超载越少越好，平均利用率越接近 0.85 越好
+    const overloadPenalty = overloadCount * 15;
+    const utilScore = Math.max(0, 50 - Math.abs(avgUtil - 0.85) * 100);
+    const pts = Math.max(5, Math.round(utilScore + 30 - overloadPenalty));
     setScore((s) => s + pts);
     award(pts);
-    if (err < 0.1) toast.success(`完美！+${pts} XP`);
-    else if (err < 0.25) toast.message(`不错！+${pts} XP`);
-    else toast.message(`+${pts} XP · 再试试看`);
+    if (overloadCount === 0 && avgUtil > 0.7) {
+      toast.success(`🎉 完美调度！+${pts} XP · 零超载，平均利用率 ${(avgUtil * 100).toFixed(0)}%`);
+    } else if (overloadCount === 0) {
+      toast.message(`+${pts} XP · 没有超载，但部分场地利用率低`);
+    } else {
+      toast.error(`+${pts} XP · ${overloadCount} 个场地超载！`);
+    }
   };
 
-  const next = () => {
+  const nextRound = () => {
     setRound((r) => r + 1);
     setSubmitted(false);
-    setAllocation([25, 25, 25, 25]);
-    setHintIdx(null);
+    setWeights(Array(8).fill(5));
+    setPickedIdx(null);
   };
+
+  // 地图：中心紫色，邻居按"流入人数 / 容量 比例"上色（utilization）
+  const neighbors = activeIdxs.map((i) => center + ALL_DIRS[i].offset);
+  const mapValues = useMemo(() => {
+    const out = new Array(TOTAL).fill(0);
+    activeIdxs.forEach((i) => {
+      const cellId = center + ALL_DIRS[i].offset;
+      // 把利用率映射到 0-100 颜色（>100 表示超载，截到 100 但用 colorOf 标红）
+      const u = flow[i] / cur.capacities[i];
+      out[cellId] = Math.min(100, Math.round(u * 80));
+    });
+    out[center] = 100;
+    return out;
+  }, [activeIdxs, flow, cur.capacities, center]);
+
+  const colorOf = (i: number) => {
+    if (i === center) return "hsl(var(--primary))";
+    const dirIdx = activeIdxs.find((di) => center + ALL_DIRS[di].offset === i);
+    if (dirIdx === undefined) return "hsl(var(--muted))";
+    const u = flow[dirIdx] / cur.capacities[dirIdx];
+    if (u > 1) return "hsl(var(--destructive))"; // 超载红
+    if (u > 0.85) return "hsl(var(--success))"; // 接近满 绿
+    if (u > 0.4) return "hsl(var(--warning))"; // 中等 黄
+    return "";
+  };
+
+  // 中心到邻居的连线（人流通道）
+  const edges: Array<[number, number]> = neighbors.map((j) => [center, j]);
 
   return (
     <Card className="p-6 shadow-panel border-border/60">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div>
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">
-            第 {round + 1} 轮 · 配送权重分配
+            第 {round + 1} 轮 · 嘉年华人流疏导 🎪
           </div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Truck className="h-5 w-5 text-primary" /> 把 100% 运力分给 4 个邻居街区
+            <Truck className="h-5 w-5 text-primary" /> {cur.title}
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            📦 {cur.story} · 点击邻居卡片可看提示，订单越多应分到越多运力。
+            🎟️ 入口涌入 <strong className="text-primary">{cur.crowd} 人</strong>
+            ，为每条道路设权重，让人流按比例分配到 {N} 个场地。别让场地超载！
           </p>
         </div>
         <Badge variant="secondary">累计 {score} XP</Badge>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_380px] gap-6 items-start">
-        <div>
+      {/* 规则切换 */}
+      <div className="flex gap-2 mb-4 flex-wrap items-center">
+        <span className="text-xs text-muted-foreground">邻接规则：</span>
+        <Button
+          size="sm"
+          variant={rule === "rook" ? "default" : "outline"}
+          onClick={() => onRuleChange("rook")}
+        >
+          ♜ Rook · 4 个方向
+        </Button>
+        <Button
+          size="sm"
+          variant={rule === "queen" ? "default" : "outline"}
+          onClick={() => onRuleChange("queen")}
+        >
+          ♛ Queen · 8 个方向
+        </Button>
+        <span className="text-[11px] text-muted-foreground italic ml-2">
+          切换会重置权重，看看不同邻接方式如何影响调度难度。
+        </span>
+      </div>
+
+      <div className="grid lg:grid-cols-[1fr_440px] gap-6 items-start">
+        <div className="space-y-3">
           <GridCity
             values={mapValues}
             size={500}
             selected={center}
             highlight={[center, ...neighbors]}
             colorOf={colorOf}
-            showLabels={true}
+            edges={edges}
+            showLabels={false}
           />
-          <p className="text-xs text-muted-foreground mt-2 text-center">
-            🚚 紫色 = 你的快递站 · 数字 = 邻居街区订单数
-          </p>
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div className="rounded-md border border-border p-2 bg-background">
+              <div className="text-muted-foreground">📊 平均利用率</div>
+              <div className={`text-lg font-bold font-mono ${avgUtil > 0.7 && avgUtil < 1 ? "text-success" : avgUtil >= 1 ? "text-destructive" : "text-warning"}`}>
+                {(avgUtil * 100).toFixed(0)}%
+              </div>
+            </div>
+            <div className="rounded-md border border-border p-2 bg-background">
+              <div className="text-muted-foreground">⚠️ 超载场地</div>
+              <div className={`text-lg font-bold font-mono ${overloadCount === 0 ? "text-success" : "text-destructive"}`}>
+                {overloadCount} / {N}
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-3 text-[10px] text-muted-foreground flex-wrap">
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded bg-primary" />入口
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded bg-success" />利用佳
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded bg-warning" />空闲
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded bg-destructive" />超载
+            </span>
+          </div>
         </div>
 
         <div className="space-y-3">
-          {/* 总和提示 */}
-          <div
-            className={`rounded-lg border-2 p-3 flex items-center justify-between transition-colors ${
-              valid ? "border-success bg-success/10" : "border-warning bg-warning/10"
-            }`}
-          >
-            <span className="text-sm font-medium">分配总和</span>
-            <div className="flex items-center gap-2">
-              <span className={`text-2xl font-bold font-mono ${valid ? "text-success" : "text-warning"}`}>
-                {total}%
-              </span>
-              {valid ? (
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              ) : (
-                <span className="text-xs text-warning">需 = 100%</span>
-              )}
-            </div>
+          {/* 场地卡片网格 */}
+          <div className="text-xs text-muted-foreground">
+            🖱️ 拖动滑杆设置权重 · 点击场地图标查看详情
           </div>
-
-          {/* 4 张邻居卡片 */}
-          <div className="grid grid-cols-2 gap-2">
-            {DIRS.map((d, idx) => {
-              const isHinted = hintIdx === idx;
-              const dev = submitted
-                ? Math.abs(allocation[idx] - truthRatios[idx] * 100)
-                : 0;
-              const cardCls = submitted
-                ? dev < 8
-                  ? "border-success bg-success/5"
-                  : "border-warning bg-warning/5"
-                : isHinted
+          <div className="grid grid-cols-2 gap-2 max-h-[420px] overflow-y-auto pr-1">
+            {activeIdxs.map((i) => {
+              const cap = cur.capacities[i];
+              const flo = flow[i];
+              const u = flo / cap;
+              const isOver = flo > cap;
+              const isPicked = pickedIdx === i;
+              const cardCls = isOver
+                ? "border-destructive bg-destructive/5"
+                : u > 0.85
+                ? "border-success bg-success/5"
+                : isPicked
                 ? "border-primary bg-primary-soft"
                 : "border-border bg-background hover:border-primary/50";
               return (
                 <div
-                  key={d.label}
-                  className={`rounded-lg border-2 p-3 transition-all ${cardCls}`}
+                  key={i}
+                  className={`rounded-lg border-2 p-2.5 transition-all ${cardCls}`}
                 >
                   <button
                     type="button"
-                    onClick={() => showHint(idx)}
-                    className="w-full text-left mb-2 group"
-                    title="点击查看提示"
+                    onClick={() => showDetail(i)}
+                    className="w-full text-left mb-1.5 group"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-semibold">{d.label}</span>
-                      <span className="text-[10px] text-muted-foreground group-hover:text-primary">
-                        💡 提示
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-mono text-muted-foreground">
+                        {ALL_DIRS[i].label}
                       </span>
+                      {isOver && (
+                        <Badge variant="destructive" className="h-4 px-1 text-[9px]">
+                          超载
+                        </Badge>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-2xl">{d.emoji}</span>
-                      <div>
-                        <div className="text-[10px] text-muted-foreground">订单</div>
-                        <div className="text-lg font-bold font-mono leading-none">{orders[idx]}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xl">{cur.icons[i]}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] truncate font-medium">{cur.names[i]}</div>
+                        <div className="text-[10px] font-mono text-muted-foreground">
+                          容量 {cap}
+                        </div>
                       </div>
                     </div>
                   </button>
-                  <div className="flex items-baseline justify-between mb-1">
-                    <span className="text-[10px] text-muted-foreground">分配运力</span>
-                    <span className="text-base font-bold font-mono text-primary">
-                      {allocation[idx]}%
+                  {/* 流入条 */}
+                  <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-1">
+                    <div
+                      className={`h-full transition-all ${
+                        isOver ? "bg-destructive" : u > 0.85 ? "bg-success" : "bg-primary"
+                      }`}
+                      style={{ width: `${Math.min(100, u * 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] font-mono mb-1">
+                    <span className={isOver ? "text-destructive font-bold" : "text-foreground"}>
+                      {flo} 人
+                    </span>
+                    <span className="text-primary font-bold">
+                      w={normalized[i].toFixed(2)}
                     </span>
                   </div>
                   <Slider
                     min={0}
-                    max={100}
-                    step={5}
-                    value={[allocation[idx]]}
-                    onValueChange={(v) => updateAlloc(idx, v[0])}
+                    max={10}
+                    step={1}
+                    value={[weights[i]]}
+                    onValueChange={(v) => updateWeight(i, v[0])}
                     disabled={submitted}
                   />
-                  {submitted && (
-                    <div className="text-[10px] mt-1.5 font-mono flex justify-between">
-                      <span className="text-muted-foreground">
-                        答案 {(truthRatios[idx] * 100).toFixed(0)}%
-                      </span>
-                      <span className={dev < 8 ? "text-success" : "text-warning"}>
-                        偏差 {dev.toFixed(0)}%
-                      </span>
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
 
-          {!submitted ? (
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" size="sm" onClick={autoBalance}>
-                <Sparkles className="h-3.5 w-3.5 mr-1" /> 自动均衡
-              </Button>
-              <Button onClick={submit} disabled={!valid} size="sm">
-                <Target className="h-3.5 w-3.5 mr-1" /> 提交方案
-              </Button>
-            </div>
-          ) : (
-            <Button onClick={next} className="w-full">
-              下一轮 →
+          {/* 操作按钮 */}
+          <div className="grid grid-cols-3 gap-2">
+            <Button variant="ghost" size="sm" onClick={reset}>
+              <RotateCcw className="h-3.5 w-3.5 mr-1" /> 重置
             </Button>
-          )}
+            <Button variant="outline" size="sm" onClick={autoOptimize}>
+              <Sparkles className="h-3.5 w-3.5 mr-1" /> 智能分配
+            </Button>
+            {!submitted ? (
+              <Button onClick={submit} size="sm">
+                <Target className="h-3.5 w-3.5 mr-1" /> 开闸放行
+              </Button>
+            ) : (
+              <Button onClick={nextRound} size="sm">
+                下一轮 →
+              </Button>
+            )}
+          </div>
 
-          <div className="rounded-md bg-primary-soft p-3 text-[11px] text-primary leading-relaxed">
-            🎯 <strong>这就是行标准化的权重矩阵 W 的一行！</strong>
-            wᵢⱼ = 邻居 j 的订单 ÷ 所有邻居订单之和，加起来 = 1。
+          {/* 行标准化矩阵实时显示 */}
+          <div className="rounded-md border border-border bg-muted/30 p-2.5">
+            <div className="text-[10px] text-muted-foreground mb-1.5 flex items-center justify-between">
+              <span>📐 当前行标准化权重 W[入口, *]</span>
+              <span className="font-mono">Σw = {normalized.reduce((a, b) => a + b, 0).toFixed(2)}</span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {activeIdxs.map((i) => (
+                <span
+                  key={i}
+                  className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-background border border-border"
+                >
+                  {cur.icons[i]} {normalized[i].toFixed(2)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md bg-primary-soft p-2.5 text-[11px] text-primary leading-relaxed">
+            🎯 <strong>这就是行标准化的空间权重矩阵 W！</strong>
+            wᵢⱼ = 你给道路 j 的原始权重 ÷ 所有道路权重之和。规则不同（Rook/Queen），矩阵的非零元数也不同。
           </div>
         </div>
       </div>
     </Card>
   );
 }
+
 
 // ============ 玩法三：矩阵找茬 ============
 // 故事：实习生构建了一个权重矩阵，犯了几个常见错误。请找出来。
