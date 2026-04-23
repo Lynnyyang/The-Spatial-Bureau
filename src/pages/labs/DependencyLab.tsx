@@ -214,7 +214,7 @@ function SpotChallenge({ scenario, W, award }: { scenario: Scenario; W: number[]
         <div className="flex items-center gap-2">
           {streak > 0 && (
             <Badge variant="secondary" className="gap-1">
-              <Flame className="h-3 w-3 text-orange-500" /> 连胜 {streak}
+              <Flame className="h-3 w-3 text-warning" /> 连胜 {streak}
             </Badge>
           )}
           <Button variant="outline" size="sm" onClick={next}>
