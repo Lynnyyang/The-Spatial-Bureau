@@ -394,6 +394,21 @@ function HigherOrderLab() {
   const [target, setTarget] = useState<number | null>(null);
   const [explored, setExplored] = useState<Set<string>>(new Set());
 
+  // ---- 挑战模式 ----
+  type ChallengeKind = "max2" | "countPaths" | "onlyVia2";
+  type Challenge = {
+    kind: ChallengeKind;
+    src: number;
+    tgt?: number;
+    answer: number;
+    options?: number[];
+    prompt: string;
+  };
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
+  const [streak, setStreak] = useState(0);
+  const [solved, setSolved] = useState(0);
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+
   // 一阶 Rook 邻居矩阵 W（0/1）
   const W1 = useMemo(() => {
     const M: number[][] = Array.from({ length: N }, () => Array(N).fill(0));
