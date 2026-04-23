@@ -443,7 +443,7 @@ function PaintChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
 }
 
 // ============ 挑战 4：平滑实验 ============
-function BlurChallenge({ scenario, W }: { scenario: Scenario; W: number[][] }) {
+function BlurChallenge({ W }: { W: number[][] }) {
   const [seed, setSeed] = useState(42);
   const [blur, setBlur] = useState([0]);
 
