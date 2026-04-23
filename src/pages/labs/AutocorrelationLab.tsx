@@ -9,7 +9,29 @@ import {
   buildNeighbors, generateClustered, lisa, moranPermutation,
   quadrantColor, rowStandardize, type Quadrant,
 } from "@/lib/spatial";
-import { Activity, Play } from "lucide-react";
+import { Activity, Play, Trophy, CheckCircle2, XCircle, ChevronRight, Target } from "lucide-react";
+import { useAppStore } from "@/store/app";
+import { toast } from "sonner";
+
+type StepId = "global-sign" | "significance" | "find-hh" | "find-ll" | "find-outlier";
+interface Step {
+  id: StepId;
+  title: string;
+  prompt: string;
+  hint: string;
+  type: "choice" | "pick";
+  options?: { label: string; value: string }[];
+  validate: (ans: string | number, ctx: ChallengeCtx) => boolean;
+  feedback: (ok: boolean, ctx: ChallengeCtx) => string;
+}
+interface ChallengeCtx {
+  I: number;
+  pseudoP: number;
+  expectedI: number;
+  hhSet: Set<number>;
+  llSet: Set<number>;
+  outlierSet: Set<number>;
+}
 
 const QUAD_INFO: Record<Quadrant, { label: string; desc: string }> = {
   HH: { label: "HH 热点", desc: "高值被高值包围" },
@@ -23,6 +45,10 @@ export default function AutocorrelationLab() {
   const [seed, setSeed] = useState(42);
   const [alpha, setAlpha] = useState(0.05);
   const [selected, setSelected] = useState<number | null>(null);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [answered, setAnswered] = useState<Record<number, boolean>>({});
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const awardXp = useAppStore((s) => s.awardXp);
 
   const values = useMemo(() => generateClustered(seed, 2), [seed]);
   const W = useMemo(() => rowStandardize(buildNeighbors({ rule: "queen" })), []);
@@ -34,6 +60,123 @@ export default function AutocorrelationLab() {
   );
 
   const points = lisaRes.map((r) => ({ x: r.z, y: r.lagZ }));
+
+  const ctx: ChallengeCtx = useMemo(() => ({
+    I: perm.I,
+    pseudoP: perm.pseudoP,
+    expectedI: perm.expectedI,
+    hhSet: new Set(lisaThr.map((q, i) => q === "HH" ? i : -1).filter((i) => i >= 0)),
+    llSet: new Set(lisaThr.map((q, i) => q === "LL" ? i : -1).filter((i) => i >= 0)),
+    outlierSet: new Set(lisaThr.map((q, i) => (q === "HL" || q === "LH") ? i : -1).filter((i) => i >= 0)),
+  }), [perm, lisaThr]);
+
+  const STEPS: Step[] = useMemo(() => [
+    {
+      id: "global-sign",
+      title: "第一步 · 判断全局趋势",
+      prompt: `观察全局 Moran's I = ${perm.I.toFixed(3)}，期望值 E[I] = ${perm.expectedI.toFixed(3)}。整座城市呈现什么空间格局？`,
+      hint: "I > E[I] → 正自相关（聚集）；I < E[I] → 负自相关（分散）；I ≈ E[I] → 随机。",
+      type: "choice",
+      options: [
+        { label: "正自相关 · 高低值各自聚集", value: "pos" },
+        { label: "负自相关 · 高低值交替分散", value: "neg" },
+        { label: "随机分布 · 无空间结构", value: "rand" },
+      ],
+      validate: (a, c) => {
+        const diff = c.I - c.expectedI;
+        if (a === "pos") return diff > 0.05;
+        if (a === "neg") return diff < -0.05;
+        return Math.abs(diff) <= 0.05;
+      },
+      feedback: (ok, c) =>
+        ok ? `正确！I − E[I] = ${(c.I - c.expectedI).toFixed(3)}，方向判断准确。`
+           : `再想想：当前 I − E[I] = ${(c.I - c.expectedI).toFixed(3)}。`,
+    },
+    {
+      id: "significance",
+      title: "第二步 · 检验显著性",
+      prompt: `置换检验 p = ${perm.pseudoP.toFixed(3)}。在 α = 0.05 下，第一步的结论可信吗？`,
+      hint: "p ≤ α 拒绝零假设（空间随机），认为聚集真实存在；p > α 则证据不足。",
+      type: "choice",
+      options: [
+        { label: "显著 · 可以拒绝随机假设", value: "sig" },
+        { label: "不显著 · 可能只是巧合", value: "ns" },
+      ],
+      validate: (a, c) => (a === "sig" ? c.pseudoP <= 0.05 : c.pseudoP > 0.05),
+      feedback: (ok, c) =>
+        ok ? `没错！p = ${c.pseudoP.toFixed(3)}。现在进入局部分析。`
+           : `注意 p 与 α=0.05 的比较。`,
+    },
+    {
+      id: "find-hh",
+      title: "第三步 · 找一个 HH 热点",
+      prompt: `点击地图，选出一个 LISA 显著的 "HH 热点"（高值被高值包围）。共 ${ctx.hhSet.size} 个候选。`,
+      hint: "HH 在散点图右上象限：z > 0 且 Wz > 0，且 p ≤ α。地图上为红色。",
+      type: "pick",
+      validate: (a, c) => typeof a === "number" && c.hhSet.has(a),
+      feedback: (ok) => (ok ? "命中 HH 热点！这是政策应优先关注的过热区。" : "选中的不是 HH，看看红色单元。"),
+    },
+    {
+      id: "find-ll",
+      title: "第四步 · 找一个 LL 冷点",
+      prompt: `继续点击地图，选出一个 "LL 冷点"（低值被低值包围）。共 ${ctx.llSet.size} 个候选。`,
+      hint: "LL 在散点图左下：z < 0 且 Wz < 0。地图上为蓝色。",
+      type: "pick",
+      validate: (a, c) => typeof a === "number" && c.llSet.has(a),
+      feedback: (ok) => (ok ? "正确！冷点常代表资源洼地或边缘地带。" : "再看看蓝色单元。"),
+    },
+    {
+      id: "find-outlier",
+      title: "第五步 · 揪出空间异常 (HL / LH)",
+      prompt: `异常点"鹤立鸡群"或"凤凰落鸡窝"——与邻居相反。请点击一个 HL 或 LH 单元。共 ${ctx.outlierSet.size} 个候选。`,
+      hint: "HL：高值落在低值海洋中（橙色）；LH：低值陷在高值丛林中（黄色）。",
+      type: "pick",
+      validate: (a, c) => typeof a === "number" && c.outlierSet.has(a),
+      feedback: (ok) => (ok ? "出色！异常点往往揭示局部特殊机制。" : "目标是 HL 或 LH 颜色的单元。"),
+    },
+  ], [perm, ctx]);
+
+  const currentStep = STEPS[stepIdx];
+  const isStepDone = !!answered[stepIdx];
+  const allDone = STEPS.every((_, i) => answered[i]);
+
+  const submitChoice = (val: string) => {
+    const ok = currentStep.validate(val, ctx);
+    setFeedback({ ok, msg: currentStep.feedback(ok, ctx) });
+    if (ok && !answered[stepIdx]) {
+      setAnswered((a) => ({ ...a, [stepIdx]: true }));
+      awardXp(15);
+      toast.success("+15 XP");
+    }
+  };
+
+  const handleCellClick = (i: number) => {
+    setSelected(i);
+    if (currentStep.type === "pick" && !isStepDone) {
+      const ok = currentStep.validate(i, ctx);
+      setFeedback({ ok, msg: currentStep.feedback(ok, ctx) });
+      if (ok) {
+        setAnswered((a) => ({ ...a, [stepIdx]: true }));
+        awardXp(20);
+        toast.success("+20 XP");
+      }
+    }
+  };
+
+  const goNext = () => {
+    if (stepIdx < STEPS.length - 1) {
+      setStepIdx(stepIdx + 1);
+      setFeedback(null);
+    }
+  };
+
+  const restartChallenge = () => {
+    setStepIdx(0);
+    setAnswered({});
+    setFeedback(null);
+    setSelected(null);
+    setSeed((s) => s + 1);
+  };
 
   const histMax = 30;
   const histBins = useMemo(() => {
@@ -65,6 +208,94 @@ export default function AutocorrelationLab() {
           <Play className="h-3.5 w-3.5 mr-1" /> 换一组数据
         </Button>
       </header>
+
+
+      {/* Challenge Panel */}
+      <Card className="p-5 shadow-panel border-primary/40 bg-gradient-to-br from-primary/5 to-transparent">
+        <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <Trophy className="h-5 w-5 text-primary" />
+            <div className="text-sm font-semibold">闯关式学习 · 全局 → 局部</div>
+            <Badge variant="outline" className="font-mono text-[10px]">
+              {Object.keys(answered).length}/{STEPS.length}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {STEPS.map((s, i) => (
+              <button
+                key={s.id}
+                onClick={() => { setStepIdx(i); setFeedback(null); }}
+                className={`h-2 w-8 rounded-full transition-all ${
+                  answered[i] ? "bg-success" : i === stepIdx ? "bg-primary" : "bg-muted"
+                }`}
+                title={s.title}
+              />
+            ))}
+          </div>
+        </div>
+
+        {!allDone ? (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Target className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+              <div>
+                <div className="text-sm font-semibold">{currentStep.title}</div>
+                <div className="text-sm text-muted-foreground mt-1">{currentStep.prompt}</div>
+                <div className="text-[11px] text-muted-foreground/80 mt-1 italic">提示：{currentStep.hint}</div>
+              </div>
+            </div>
+
+            {currentStep.type === "choice" && (
+              <div className="grid sm:grid-cols-3 gap-2">
+                {currentStep.options!.map((o) => (
+                  <Button
+                    key={o.value}
+                    variant="outline"
+                    size="sm"
+                    onClick={() => submitChoice(o.value)}
+                    disabled={isStepDone}
+                    className="justify-start text-left h-auto py-2 whitespace-normal"
+                  >
+                    {o.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {currentStep.type === "pick" && (
+              <div className="text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                👇 在下方 LISA 地图或散点图上点击你认为符合条件的区域。
+              </div>
+            )}
+
+            {feedback && (
+              <div className={`flex items-start gap-2 text-sm rounded-md px-3 py-2 ${
+                feedback.ok ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"
+              }`}>
+                {feedback.ok ? <CheckCircle2 className="h-4 w-4 mt-0.5" /> : <XCircle className="h-4 w-4 mt-0.5" />}
+                <span>{feedback.msg}</span>
+              </div>
+            )}
+
+            {isStepDone && stepIdx < STEPS.length - 1 && (
+              <Button size="sm" onClick={goNext}>
+                下一步 <ChevronRight className="h-3.5 w-3.5 ml-1" />
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-2 text-sm">
+              <CheckCircle2 className="h-5 w-5 text-success" />
+              <span className="font-semibold">五步全通关！</span>
+              <span className="text-muted-foreground">你已掌握全局 Moran's I → 显著性 → LISA 四象限的完整链路。</span>
+            </div>
+            <Button size="sm" variant="outline" onClick={restartChallenge}>
+              <Play className="h-3.5 w-3.5 mr-1" /> 换一组数据再战
+            </Button>
+          </div>
+        )}
+      </Card>
 
       {/* Global Moran */}
       <div className="grid lg:grid-cols-3 gap-4">
@@ -118,7 +349,7 @@ export default function AutocorrelationLab() {
             values={values}
             size={460}
             selected={selected}
-            onCellClick={setSelected}
+            onCellClick={handleCellClick}
             colorOf={(i) => quadrantColor(lisaThr[i])}
           />
           <div className="mt-3 grid grid-cols-5 gap-1 text-[10px]">
@@ -137,7 +368,7 @@ export default function AutocorrelationLab() {
             values={points}
             size={420}
             selected={selected}
-            onPointClick={setSelected}
+            onPointClick={handleCellClick}
             colorOf={(i) => quadrantColor(lisaThr[i])}
           />
           <div className="mt-3 p-3 rounded-md bg-muted/40 text-sm">
