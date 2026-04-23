@@ -764,139 +764,188 @@ function DeliveryAllocator() {
 }
 
 
-// ============ 玩法三：矩阵找茬（点击式）============
-// 故事：实习生构建了权重矩阵，犯了几个常见错误。
-// 玩家直接点击矩阵中可疑的格子，弹出选项卡选择问题类型。
+// ============ 玩法三：矩阵找茬（9×9 行标准化权重矩阵）============
+// 故事：实习生构建了 9 个区域的行标准化空间权重矩阵 W（9×9），
+// 但 W 中藏着几处错误。点击任何可疑的元素 wᵢⱼ，选择问题类型并贴标签。
+// 9 个区域排成 3×3 小地图：A B C / D E F / G H I（行优先 0..8）
 type BugType = {
   id: string;
   label: string;
-  short: string; // 短标签，显示在格子上
+  short: string;
   explain: string;
   emoji: string;
 };
 
 const BUG_TYPES: BugType[] = [
-  { id: "self", short: "自邻", label: "对角线非零（自己是自己的邻居）", explain: "权重矩阵规定 wᵢᵢ = 0，区域不能成为自己的邻居。", emoji: "🪞" },
-  { id: "fake", short: "假邻", label: "把不相邻的远距离区域设为邻居", explain: "权重应反映实际空间关系，跨区域赋权会污染分析结果。", emoji: "🛸" },
-  { id: "miss", short: "漏邻", label: "漏掉了真实相邻的邻居", explain: "邻接关系不完整，会低估空间依赖性。", emoji: "🕳️" },
-  { id: "asym", short: "不对称", label: "矩阵不对称（A→B 是邻居，B→A 不是）", explain: "对于无向邻接关系，W 应该对称：wᵢⱼ = wⱼᵢ。", emoji: "↔️" },
-  { id: "neg", short: "负值", label: "出现负数权重", explain: "标准空间权重应非负；负权重需要特殊设定且很少使用。", emoji: "➖" },
-  { id: "island", short: "孤岛", label: "中心区域没有任何邻居（孤岛）", explain: "孤岛单元在 Moran's I 计算中会被忽略，应改用 KNN 或扩大阈值。", emoji: "🏝️" },
+  { id: "self", short: "自邻", label: "对角线非零（wᵢᵢ ≠ 0）", explain: "权重矩阵规定 wᵢᵢ = 0，区域不能成为自己的邻居。", emoji: "🪞" },
+  { id: "fake", short: "假邻", label: "把不相邻的区域标为邻居（wᵢⱼ > 0 但 i,j 实际不相邻）", explain: "权重应反映真实空间关系，给非邻居赋权会污染分析。", emoji: "🛸" },
+  { id: "miss", short: "漏邻", label: "漏掉了真实相邻的邻居（wᵢⱼ = 0 但 i,j 应为邻居）", explain: "邻接关系不完整，会低估空间依赖性。", emoji: "🕳️" },
+  { id: "asym", short: "不对称", label: "矩阵不对称（wᵢⱼ ≠ 0 但 wⱼᵢ = 0）", explain: "无向邻接关系应满足对称性 wᵢⱼ = wⱼᵢ（标准化前）。", emoji: "↔️" },
+  { id: "neg", short: "负值", label: "出现负数权重（wᵢⱼ < 0）", explain: "标准空间权重应非负；负权重很少使用。", emoji: "➖" },
+  { id: "rowsum", short: "行和≠1", label: "该行所有非零权重之和 ≠ 1（行标准化错误）", explain: "行标准化要求 Σⱼ wᵢⱼ = 1（除非该行全为孤岛）。", emoji: "🧮" },
 ];
 
-// 每个格子：display(显示值)、isCenter、bugId（如果有问题，标注问题类型；否则 null）
-type BugCell = {
-  id: number;
-  display: string; // 显示文本，如 "0", "1", "0.5", "-0.5"
-  isCenter?: boolean;
-  isNormal?: boolean; // 正常邻居（高亮但无问题）
-  bugId?: string | null; // 此格的真实问题
+// 9 个区域排成 3×3 小地图（Rook 邻接）
+const REGIONS = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
+const REGION_POS: Record<number, [number, number]> = {
+  0: [0, 0], 1: [0, 1], 2: [0, 2],
+  3: [1, 0], 4: [1, 1], 5: [1, 2],
+  6: [2, 0], 7: [2, 1], 8: [2, 2],
+};
+// Rook 真实邻接（对称）
+const TRUE_NEIGHBORS: Record<number, number[]> = {
+  0: [1, 3],
+  1: [0, 2, 4],
+  2: [1, 5],
+  3: [0, 4, 6],
+  4: [1, 3, 5, 7],
+  5: [2, 4, 8],
+  6: [3, 7],
+  7: [4, 6, 8],
+  8: [5, 7],
+};
+
+// 单元格：display(显示文本)、bugId(此格的真实问题类型；null=无问题)
+type MatrixCell = {
+  display: string; // 字符串，如 "0", "0.50", "1.00", "-0.20"
+  bugId?: string | null;
 };
 
 type BugCase = {
   title: string;
   story: string;
-  rule: string;
-  cells: BugCell[];
+  // 9x9 矩阵：W[i][j]，行 i = 当前区域，列 j = 邻居
+  matrix: MatrixCell[][];
 };
 
-// 辅助函数：构建一个 5x5 case
-const buildCase = (overrides: Partial<BugCell>[]): BugCell[] => {
-  const cells: BugCell[] = Array.from({ length: 25 }, (_, i) => ({ id: i, display: "0" }));
-  overrides.forEach((o) => {
-    if (o.id === undefined) return;
-    cells[o.id] = { ...cells[o.id], ...o };
-  });
-  return cells;
-};
+// 辅助：基于 Rook 真实邻接，生成"完美的行标准化矩阵"，再注入错误
+function buildPerfectMatrix(): MatrixCell[][] {
+  const W: MatrixCell[][] = Array.from({ length: 9 }, () =>
+    Array.from({ length: 9 }, () => ({ display: "0" }))
+  );
+  for (let i = 0; i < 9; i++) {
+    const ns = TRUE_NEIGHBORS[i];
+    const w = (1 / ns.length).toFixed(2);
+    ns.forEach((j) => {
+      W[i][j] = { display: w };
+    });
+  }
+  return W;
+}
 
-const BUG_CASES: BugCase[] = [
-  {
-    title: "案例 1 · 实习生小李的 Rook 矩阵",
-    story: "小李用 Rook 邻接为中心街区构建权重，但他的矩阵看起来怪怪的……找出所有错误格子。",
-    rule: "Rook（上下左右）",
-    cells: buildCase([
-      { id: 2, display: "1", isNormal: true }, // 上邻 ✓
-      { id: 10, display: "1", isNormal: true }, // 左邻 ✓
-      { id: 12, display: "0.5", isCenter: true, bugId: "self" }, // 中心非零
-      { id: 13, display: "1", isNormal: true }, // 右邻 ✓
-      { id: 14, display: "1", bugId: "fake" }, // 远距离假邻
-      { id: 22, display: "0", bugId: "miss" }, // 下邻被漏
-    ]),
-  },
-  {
-    title: "案例 2 · 距离阈值矩阵",
-    story: "用距离阈值 = 1.0 为角落街区构建矩阵，结果中心格成了孤岛。",
-    rule: "距离阈值 d ≤ 1.0",
-    cells: buildCase([
-      { id: 0, display: "0", isCenter: true, bugId: "island" },
-    ]),
-  },
-  {
-    title: "案例 3 · Queen 矩阵的对称性",
-    story: "Queen 邻接矩阵中藏着负权重 + 不对称问题，请找出来。",
-    rule: "Queen（八向）",
-    cells: buildCase([
-      { id: 6, display: "1", isNormal: true },
-      { id: 7, display: "1", isNormal: true },
-      { id: 8, display: "-0.5", bugId: "neg" }, // 负值
-      { id: 11, display: "1", isNormal: true },
-      { id: 12, display: "0", isCenter: true },
-      { id: 13, display: "0", bugId: "asym" }, // A→13=1 但 13→A=0
-      { id: 16, display: "1", isNormal: true },
-      { id: 17, display: "1", isNormal: true },
-      { id: 18, display: "1", isNormal: true },
-    ]),
-  },
-];
+const BUG_CASES: BugCase[] = (() => {
+  // 案例 1：自邻 + 假邻（A→I 跨对角） + 漏邻（漏 D→A）
+  const m1 = buildPerfectMatrix();
+  // 自邻 bug：D 行 D 列（i=3,j=3）非零
+  m1[3][3] = { display: "0.25", bugId: "self" };
+  // 假邻 bug：A 行 I 列（i=0,j=8）非零，A 和 I 不是邻居
+  m1[0][8] = { display: "0.33", bugId: "fake" };
+  // 漏邻 bug：D 行 A 列（i=3,j=0）应为 0.33（D 的邻居是 A,E,G），漏掉
+  m1[3][0] = { display: "0", bugId: "miss" };
+  // D 行被改了 self+miss 后行和也错了（0.25+0.33+0.33=0.91），但我们重点标 self/miss
+  // 把 D 的 E、G 调成 0.5/0.5，让没改的格子行和合理
+  // 不调整，让 self bug 单独考核
+
+  // 案例 2：不对称（B→E=0.33 但 E→B=0） + 负值（C→F=-0.20）+ 行和≠1（H 行）
+  const m2 = buildPerfectMatrix();
+  // 不对称 bug：E 行 B 列（i=4,j=1）应为 0.25，但被设成 0
+  m2[4][1] = { display: "0", bugId: "asym" };
+  // 负值 bug：C 行 F 列（i=2,j=5）= -0.20
+  m2[2][5] = { display: "-0.20", bugId: "neg" };
+  // 行和≠1 bug：H 行所有邻居权重不归一（H 邻居 E、G、I 各 0.5/0.3/0.3 = 1.1）
+  m2[7][4] = { display: "0.50", bugId: "rowsum" }; // 异常值标 rowsum
+  m2[7][6] = { display: "0.30" };
+  m2[7][8] = { display: "0.30" };
+
+  // 案例 3：综合错误
+  const m3 = buildPerfectMatrix();
+  // 自邻：E (i=4,j=4)
+  m3[4][4] = { display: "0.10", bugId: "self" };
+  // 假邻：G→C (i=6,j=2)，对角不相邻
+  m3[6][2] = { display: "0.40", bugId: "fake" };
+  // 漏邻：F 行 E 列 (i=5,j=4) 应为邻居却为 0
+  m3[5][4] = { display: "0", bugId: "miss" };
+  // 不对称：A→B=0.5 但 B→A 改为 0
+  m3[1][0] = { display: "0", bugId: "asym" };
+
+  return [
+    {
+      title: "案例 1 · 实习生小李的 W 矩阵",
+      story: "9 个区域排成 3×3（A B C / D E F / G H I），按 Rook 邻接 + 行标准化构建 W。但有 3 处错误。",
+      matrix: m1,
+    },
+    {
+      title: "案例 2 · 对称性 + 行标准化",
+      story: "这次的 W 矩阵藏着不对称、负值、行和不为 1 三种问题。",
+      matrix: m2,
+    },
+    {
+      title: "案例 3 · 综合排查",
+      story: "实习生升级版 W 矩阵，错误更隐蔽。仔细比对真实邻接关系。",
+      matrix: m3,
+    },
+  ];
+})();
 
 function BugHunt() {
   const award = useAppStore((s) => s.awardXp);
   const [caseIdx, setCaseIdx] = useState(0);
-  // 玩家标注：cellId -> bugTypeId
-  const [marks, setMarks] = useState<Record<number, string>>({});
+  // 玩家标注：cellKey "i,j" -> bugTypeId
+  const [marks, setMarks] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
-  const [openCellId, setOpenCellId] = useState<number | null>(null);
+  const [openCell, setOpenCell] = useState<string | null>(null);
+  const [hoverCell, setHoverCell] = useState<string | null>(null);
 
   const cs = BUG_CASES[caseIdx];
 
-  // 真实答案：cellId -> bugId
+  // 真实答案：cellKey -> bugId
   const truth = useMemo(() => {
-    const t: Record<number, string> = {};
-    cs.cells.forEach((c) => {
-      if (c.bugId) t[c.id] = c.bugId;
-    });
+    const t: Record<string, string> = {};
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j < 9; j++) {
+        const b = cs.matrix[i][j].bugId;
+        if (b) t[`${i},${j}`] = b;
+      }
+    }
     return t;
   }, [cs]);
 
-  const markCell = (cellId: number, bugId: string) => {
+  // 行和（仅展示）
+  const rowSums = useMemo(
+    () =>
+      cs.matrix.map((row) =>
+        row.reduce((a, c) => a + (parseFloat(c.display) || 0), 0)
+      ),
+    [cs]
+  );
+
+  const markCell = (key: string, bugId: string) => {
     if (submitted) return;
-    setMarks((prev) => ({ ...prev, [cellId]: bugId }));
-    setOpenCellId(null);
+    setMarks((prev) => ({ ...prev, [key]: bugId }));
+    setOpenCell(null);
   };
 
-  const clearMark = (cellId: number) => {
+  const clearMark = (key: string) => {
     if (submitted) return;
     setMarks((prev) => {
       const next = { ...prev };
-      delete next[cellId];
+      delete next[key];
       return next;
     });
-    setOpenCellId(null);
+    setOpenCell(null);
   };
 
   const submit = () => {
     setSubmitted(true);
-    let correctCells = 0; // 标对了位置
-    let correctLabels = 0; // 位置 + 标签都对
-    let wrongCells = 0; // 标在了正常格子上
-    Object.entries(marks).forEach(([cidStr, bid]) => {
-      const cid = Number(cidStr);
-      if (truth[cid]) {
+    let correctCells = 0;
+    let correctLabels = 0;
+    let wrongCells = 0;
+    Object.entries(marks).forEach(([key, bid]) => {
+      if (truth[key]) {
         correctCells++;
-        if (truth[cid] === bid) correctLabels++;
+        if (truth[key] === bid) correctLabels++;
       } else {
         wrongCells++;
       }
@@ -922,13 +971,13 @@ function BugHunt() {
     setCaseIdx((i) => (i + 1) % BUG_CASES.length);
     setMarks({});
     setSubmitted(false);
-    setOpenCellId(null);
+    setOpenCell(null);
   };
 
   const reset = () => {
     setMarks({});
     setSubmitted(false);
-    setOpenCellId(null);
+    setOpenCell(null);
   };
 
   return (
@@ -936,16 +985,14 @@ function BugHunt() {
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">
-            案例 {caseIdx + 1} / {BUG_CASES.length} · 矩阵找茬
+            案例 {caseIdx + 1} / {BUG_CASES.length} · 9×9 行标准化矩阵找茬
           </div>
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Search className="h-5 w-5 text-primary" /> {cs.title}
           </h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            规则：{cs.rule} · {cs.story}
-          </p>
+          <p className="text-xs text-muted-foreground mt-1">{cs.story}</p>
           <p className="text-xs text-primary mt-1.5">
-            👆 直接点击矩阵中可疑的格子，从弹窗中选择问题类型并贴标签。
+            👆 点击矩阵中任一可疑元素 wᵢⱼ，从弹窗选择问题类型并贴标签。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -958,139 +1005,226 @@ function BugHunt() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-[1fr_300px] gap-6 items-start">
-        {/* 5x5 可点击矩阵 */}
-        <div className="rounded-lg border border-border p-4 bg-muted/20">
-          <div className="text-xs text-muted-foreground mb-3 text-center">
-            中心街区（紫色）的 5×5 邻域权重示意 · 点击格子标注问题
-          </div>
-          <div className="grid grid-cols-5 gap-1.5 max-w-[460px] mx-auto">
-            {cs.cells.map((c) => {
-              const mark = marks[c.id];
-              const truthBug = truth[c.id];
-              const weight = parseFloat(c.display);
-              // 基础底色
-              let bg = "bg-background border-border";
-              if (c.isCenter) bg = "bg-primary/20 text-primary-foreground border-primary";
-              else if (weight < 0) bg = "bg-destructive/20 border-destructive";
-              else if (weight > 0) bg = "bg-accent/30 border-accent";
-
-              // 提交后状态覆盖
-              if (submitted) {
-                if (mark && truthBug && mark === truthBug) {
-                  bg = "bg-success/30 border-success"; // 完美命中
-                } else if (mark && truthBug && mark !== truthBug) {
-                  bg = "bg-warning/30 border-warning"; // 位置对、标签错
-                } else if (mark && !truthBug) {
-                  bg = "bg-destructive/30 border-destructive"; // 错标在正常格子
-                } else if (!mark && truthBug) {
-                  bg = "bg-warning/20 border-warning border-dashed"; // 遗漏
-                }
-              } else if (mark) {
-                bg = "bg-primary-soft border-primary";
-              }
-
-              const markedBug = mark ? BUG_TYPES.find((b) => b.id === mark) : null;
-              const truthBugObj = truthBug ? BUG_TYPES.find((b) => b.id === truthBug) : null;
-
-              return (
-                <Popover
-                  key={c.id}
-                  open={openCellId === c.id}
-                  onOpenChange={(o) => setOpenCellId(o ? c.id : null)}
+      <div className="grid lg:grid-cols-[1fr_320px] gap-6 items-start">
+        <div className="space-y-3">
+          {/* 3×3 区域小地图 */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <div className="text-[11px] text-muted-foreground mb-2 text-center">
+              📍 9 个区域的真实空间布局（Rook 邻接：上下左右相邻）
+            </div>
+            <div className="grid grid-cols-3 gap-1.5 max-w-[200px] mx-auto">
+              {REGIONS.map((name, i) => (
+                <div
+                  key={i}
+                  className={`aspect-square rounded border-2 flex items-center justify-center text-sm font-bold font-mono transition-all ${
+                    hoverCell &&
+                    (Number(hoverCell.split(",")[0]) === i ||
+                      Number(hoverCell.split(",")[1]) === i)
+                      ? "bg-primary text-primary-foreground border-primary scale-110"
+                      : "bg-background border-border"
+                  }`}
                 >
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      disabled={submitted}
-                      className={`relative aspect-square rounded border-2 ${bg} flex flex-col items-center justify-center text-[11px] transition-all hover:scale-105 hover:z-10 disabled:hover:scale-100`}
+                  {name}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 9×9 矩阵 */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3 overflow-auto">
+            <div className="text-[11px] text-muted-foreground mb-2 text-center">
+              空间权重矩阵 W (9×9) · 行 i = 当前区域，列 j = 邻居 → wᵢⱼ
+            </div>
+            <table className="border-collapse mx-auto font-mono text-[11px]">
+              <thead>
+                <tr>
+                  <th className="w-7 h-7"></th>
+                  <th className="w-7 h-7"></th>
+                  {REGIONS.map((name, j) => (
+                    <th
+                      key={j}
+                      className={`w-9 h-7 text-center font-bold ${
+                        hoverCell && Number(hoverCell.split(",")[1]) === j
+                          ? "text-primary"
+                          : "text-muted-foreground"
+                      }`}
                     >
-                      <span className="font-mono font-semibold text-foreground">
-                        {c.display === "0" ? "·" : c.display}
-                      </span>
-                      {/* 玩家标记标签 */}
-                      {mark && markedBug && (
-                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1 rounded text-[8px] font-bold whitespace-nowrap bg-primary text-primary-foreground shadow-sm">
-                          {markedBug.emoji}{markedBug.short}
-                        </span>
-                      )}
-                      {/* 提交后：遗漏的真实答案 */}
-                      {submitted && !mark && truthBugObj && (
-                        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1 rounded text-[8px] font-bold whitespace-nowrap bg-warning text-warning-foreground shadow-sm">
-                          应为 {truthBugObj.short}
-                        </span>
-                      )}
-                      {/* 中心标识 */}
-                      {c.isCenter && (
-                        <span className="absolute -top-1 -left-1 w-3.5 h-3.5 rounded-full bg-primary text-primary-foreground text-[8px] flex items-center justify-center font-bold">
-                          C
-                        </span>
-                      )}
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-64 p-2" side="top">
-                    <div className="text-[11px] text-muted-foreground mb-2 px-1">
-                      格子 #{c.id} · 值 = {c.display} · 你认为这里是？
-                    </div>
-                    <div className="space-y-1 max-h-64 overflow-y-auto">
-                      {BUG_TYPES.map((b) => (
-                        <button
-                          key={b.id}
-                          type="button"
-                          onClick={() => markCell(c.id, b.id)}
-                          className={`w-full text-left rounded p-1.5 text-xs transition-colors flex items-start gap-2 ${
-                            mark === b.id
-                              ? "bg-primary text-primary-foreground"
-                              : "hover:bg-muted"
+                      {name}
+                    </th>
+                  ))}
+                  <th className="w-12 h-7 text-center text-muted-foreground pl-2">Σ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cs.matrix.map((row, i) => {
+                  const sum = rowSums[i];
+                  const sumOk = Math.abs(sum - 1) < 0.01 || sum === 0;
+                  return (
+                    <tr key={i}>
+                      <td
+                        className={`w-7 h-9 text-center font-bold ${
+                          hoverCell && Number(hoverCell.split(",")[0]) === i
+                            ? "text-primary"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {REGIONS[i]}
+                      </td>
+                      <td className="w-3 text-muted-foreground text-center">→</td>
+                      {row.map((c, j) => {
+                        const key = `${i},${j}`;
+                        const mark = marks[key];
+                        const truthBug = truth[key];
+                        const weight = parseFloat(c.display);
+                        const isDiag = i === j;
+
+                        let bg = "bg-background border-border";
+                        if (isDiag) bg = "bg-muted/40 border-border";
+                        if (weight < 0) bg = "bg-destructive/15 border-destructive/50";
+                        else if (weight > 0) bg = "bg-accent/20 border-accent/50";
+
+                        if (submitted) {
+                          if (mark && truthBug && mark === truthBug)
+                            bg = "bg-success/30 border-success";
+                          else if (mark && truthBug && mark !== truthBug)
+                            bg = "bg-warning/30 border-warning";
+                          else if (mark && !truthBug)
+                            bg = "bg-destructive/30 border-destructive";
+                          else if (!mark && truthBug)
+                            bg = "bg-warning/20 border-warning border-dashed";
+                        } else if (mark) {
+                          bg = "bg-primary-soft border-primary";
+                        }
+
+                        const markedBug = mark ? BUG_TYPES.find((b) => b.id === mark) : null;
+                        const truthBugObj = truthBug
+                          ? BUG_TYPES.find((b) => b.id === truthBug)
+                          : null;
+
+                        return (
+                          <td key={j} className="p-0.5">
+                            <Popover
+                              open={openCell === key}
+                              onOpenChange={(o) => setOpenCell(o ? key : null)}
+                            >
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  disabled={submitted}
+                                  onMouseEnter={() => setHoverCell(key)}
+                                  onMouseLeave={() => setHoverCell(null)}
+                                  className={`relative w-9 h-9 rounded border ${bg} flex items-center justify-center transition-all hover:scale-110 hover:z-10 disabled:hover:scale-100`}
+                                  title={`w[${REGIONS[i]},${REGIONS[j]}] = ${c.display}`}
+                                >
+                                  <span className="text-[10px] font-semibold text-foreground">
+                                    {c.display === "0" ? "·" : c.display}
+                                  </span>
+                                  {mark && markedBug && (
+                                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[8px] flex items-center justify-center font-bold shadow">
+                                      {markedBug.emoji}
+                                    </span>
+                                  )}
+                                  {submitted && !mark && truthBugObj && (
+                                    <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-warning text-warning-foreground text-[8px] flex items-center justify-center font-bold shadow">
+                                      {truthBugObj.emoji}
+                                    </span>
+                                  )}
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-72 p-2" side="top">
+                                <div className="text-[11px] text-muted-foreground mb-2 px-1">
+                                  <span className="font-mono font-bold text-foreground">
+                                    w[{REGIONS[i]} → {REGIONS[j]}] = {c.display}
+                                  </span>
+                                  <div className="mt-0.5">
+                                    {i === j
+                                      ? "⚠️ 这是对角线元素（自己→自己）"
+                                      : TRUE_NEIGHBORS[i].includes(j)
+                                      ? `✅ ${REGIONS[i]} 和 ${REGIONS[j]} 在地图上确实相邻`
+                                      : `❌ ${REGIONS[i]} 和 ${REGIONS[j]} 在地图上不相邻`}
+                                  </div>
+                                </div>
+                                <div className="space-y-1 max-h-72 overflow-y-auto">
+                                  {BUG_TYPES.map((b) => (
+                                    <button
+                                      key={b.id}
+                                      type="button"
+                                      onClick={() => markCell(key, b.id)}
+                                      className={`w-full text-left rounded p-1.5 text-xs transition-colors flex items-start gap-2 ${
+                                        mark === b.id
+                                          ? "bg-primary text-primary-foreground"
+                                          : "hover:bg-muted"
+                                      }`}
+                                    >
+                                      <span className="text-base leading-none">{b.emoji}</span>
+                                      <div className="flex-1">
+                                        <div className="font-semibold">{b.short}</div>
+                                        <div
+                                          className={`text-[10px] leading-tight mt-0.5 ${
+                                            mark === b.id
+                                              ? "text-primary-foreground/80"
+                                              : "text-muted-foreground"
+                                          }`}
+                                        >
+                                          {b.label}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                  {mark && (
+                                    <button
+                                      type="button"
+                                      onClick={() => clearMark(key)}
+                                      className="w-full text-left rounded p-1.5 text-[11px] text-muted-foreground hover:bg-muted border-t border-border mt-1 pt-2"
+                                    >
+                                      ✕ 清除此格标记
+                                    </button>
+                                  )}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </td>
+                        );
+                      })}
+                      {/* 行和 */}
+                      <td className="pl-2">
+                        <span
+                          className={`text-[10px] font-bold ${
+                            sumOk ? "text-success" : "text-destructive"
                           }`}
                         >
-                          <span className="text-base leading-none">{b.emoji}</span>
-                          <div className="flex-1">
-                            <div className="font-semibold">{b.short}</div>
-                            <div className={`text-[10px] leading-tight mt-0.5 ${mark === b.id ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                              {b.label}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                      {mark && (
-                        <button
-                          type="button"
-                          onClick={() => clearMark(c.id)}
-                          className="w-full text-left rounded p-1.5 text-[11px] text-muted-foreground hover:bg-muted border-t border-border mt-1 pt-2"
-                        >
-                          ✕ 清除此格标记
-                        </button>
-                      )}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              );
-            })}
-          </div>
-          <div className="mt-4 flex flex-wrap gap-3 justify-center text-[10px] text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-primary/20 border border-primary" /> 中心
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-accent/30 border border-accent" /> 正权重
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-destructive/20 border border-destructive" /> 负权重
-            </span>
-            {submitted && (
-              <>
-                <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded bg-success/30 border border-success" /> 完美命中
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded bg-warning/30 border border-warning" /> 位置对/标签错
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="w-2.5 h-2.5 rounded bg-destructive/30 border border-destructive" /> 错标
-                </span>
-              </>
-            )}
+                          {sum.toFixed(2)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="mt-3 flex flex-wrap gap-3 justify-center text-[10px] text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-accent/20 border border-accent/50" /> 正权重
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-destructive/15 border border-destructive/50" /> 负权重
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded bg-muted/40 border border-border" /> 对角线
+              </span>
+              {submitted && (
+                <>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-success/30 border border-success" /> 完美
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-warning/30 border border-warning" /> 标签错/遗漏
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-2.5 h-2.5 rounded bg-destructive/30 border border-destructive" /> 错标
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1099,13 +1233,16 @@ function BugHunt() {
           <div className="rounded-md border-2 border-primary/40 bg-primary-soft/40 p-3">
             <div className="text-xs text-muted-foreground mb-1">已标注</div>
             <div className="text-2xl font-bold font-mono text-primary">
-              {Object.keys(marks).length} <span className="text-sm text-muted-foreground">个格子</span>
+              {Object.keys(marks).length}{" "}
+              <span className="text-sm text-muted-foreground">个元素</span>
             </div>
           </div>
 
           {/* 标签图例 */}
           <div className="rounded-md border border-border bg-background p-2.5 space-y-1.5">
-            <div className="text-[11px] font-semibold text-muted-foreground mb-1">📚 问题类型速查</div>
+            <div className="text-[11px] font-semibold text-muted-foreground mb-1">
+              📚 问题类型速查
+            </div>
             {BUG_TYPES.map((b) => (
               <div key={b.id} className="flex items-start gap-2 text-[11px]">
                 <span className="text-base leading-none mt-0.5">{b.emoji}</span>
@@ -1119,12 +1256,12 @@ function BugHunt() {
 
           {/* 提交后：详细答案解释 */}
           {submitted && (
-            <div className="rounded-md border border-border bg-background p-2.5 space-y-2">
+            <div className="rounded-md border border-border bg-background p-2.5 space-y-2 max-h-[260px] overflow-y-auto">
               <div className="text-[11px] font-semibold">📖 答案解析</div>
-              {Object.entries(truth).map(([cidStr, bid]) => {
-                const cid = Number(cidStr);
+              {Object.entries(truth).map(([key, bid]) => {
+                const [i, j] = key.split(",").map(Number);
                 const b = BUG_TYPES.find((x) => x.id === bid)!;
-                const userMark = marks[cid];
+                const userMark = marks[key];
                 const status =
                   userMark === bid
                     ? { txt: "✓ 完美", cls: "text-success" }
@@ -1132,10 +1269,10 @@ function BugHunt() {
                     ? { txt: "△ 标错类型", cls: "text-warning" }
                     : { txt: "✗ 遗漏", cls: "text-destructive" };
                 return (
-                  <div key={cid} className="text-[11px] border-l-2 border-border pl-2">
+                  <div key={key} className="text-[11px] border-l-2 border-border pl-2">
                     <div className="flex justify-between items-center">
                       <span className="font-mono">
-                        格子 #{cid} {b.emoji} {b.short}
+                        w[{REGIONS[i]},{REGIONS[j]}] {b.emoji} {b.short}
                       </span>
                       <span className={`font-bold ${status.cls}`}>{status.txt}</span>
                     </div>
@@ -1166,7 +1303,7 @@ function BugHunt() {
           <div className="rounded-md bg-primary-soft p-3 text-[11px] text-primary leading-relaxed flex gap-2">
             <Sparkles className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
             <span>
-              一个好的权重矩阵要满足：对角线为 0、非邻居赋 0、相邻关系完整、对称（无向时）、非负数。
+              好的行标准化 W 满足：对角线为 0、与真实邻接一致、对称、非负、每行非零元之和 = 1。
             </span>
           </div>
         </div>
@@ -1174,4 +1311,5 @@ function BugHunt() {
     </Card>
   );
 }
+
 
