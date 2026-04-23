@@ -149,8 +149,8 @@ function SpotChallenge({ W, award }: { W: number[][]; award: (n: number) => void
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <div>
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 1 / 5 · 视觉识别</div>
-          <h2 className="text-lg font-semibold">哪一份{scenario.name}地图最可能存在空间依赖？</h2>
-          <p className="text-xs text-muted-foreground mt-1">{scenario.hint}</p>
+          <h2 className="text-lg font-semibold">哪一份温度地图最可能存在空间依赖？</h2>
+          <p className="text-xs text-muted-foreground mt-1">工业区、商圈往往形成连片高温团块，而随机分布则不会。</p>
         </div>
         <div className="flex items-center gap-2">
           {streak > 0 && (
