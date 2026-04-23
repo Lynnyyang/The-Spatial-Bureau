@@ -1006,7 +1006,7 @@ function BugHunt() {
           </h2>
           <p className="text-xs text-muted-foreground mt-1">{cs.story}</p>
           <p className="text-xs text-primary mt-1.5">
-            👆 点击矩阵中任一可疑元素 wᵢⱼ，从弹窗选择问题类型并贴标签。
+            👆 点击矩阵元素 wᵢⱼ 标注单元格问题；点击行标签 (A-I) 标注"行和≠1"问题。
           </p>
         </div>
         <div className="flex items-center gap-2">
