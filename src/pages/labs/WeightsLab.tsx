@@ -816,7 +816,15 @@ type BugCase = {
   story: string;
   // 9x9 矩阵：W[i][j]，行 i = 当前区域，列 j = 邻居
   matrix: MatrixCell[][];
+  // 行级问题：rowIndex -> bugId（目前只用于 "rowsum"）
+  rowBugs?: Record<number, string>;
 };
+
+// 智能格式化数字：浮点累加误差 < 0.005 时四舍五入
+function smartSum(n: number): string {
+  if (Math.abs(n - Math.round(n)) < 0.005) return Math.round(n).toFixed(2);
+  return n.toFixed(2);
+}
 
 // 辅助：基于 Rook 真实邻接，生成"完美的行标准化矩阵"，再注入错误
 function buildPerfectMatrix(): MatrixCell[][] {
@@ -852,12 +860,12 @@ const BUG_CASES: BugCase[] = (() => {
   m2[4][1] = { display: "0", bugId: "asym" };
   // 负值 bug：C 行 F 列（i=2,j=5）= -0.20
   m2[2][5] = { display: "-0.20", bugId: "neg" };
-  // 行和≠1 bug：H 行所有邻居权重不归一（H 邻居 E、G、I 各 0.5/0.3/0.3 = 1.1）
-  m2[7][4] = { display: "0.50", bugId: "rowsum" }; // 异常值标 rowsum
+  // 行和≠1：H 行（i=7）邻居 E/G/I 设成 0.5/0.3/0.3 = 1.1
+  m2[7][4] = { display: "0.50" };
   m2[7][6] = { display: "0.30" };
   m2[7][8] = { display: "0.30" };
 
-  // 案例 3：综合错误
+  // 案例 3：综合（自邻 + 假邻 + 漏邻 + 不对称）
   const m3 = buildPerfectMatrix();
   // 自邻：E (i=4,j=4)
   m3[4][4] = { display: "0.10", bugId: "self" };
@@ -865,7 +873,7 @@ const BUG_CASES: BugCase[] = (() => {
   m3[6][2] = { display: "0.40", bugId: "fake" };
   // 漏邻：F 行 E 列 (i=5,j=4) 应为邻居却为 0
   m3[5][4] = { display: "0", bugId: "miss" };
-  // 不对称：A→B=0.5 但 B→A 改为 0
+  // 不对称：B→A (i=1,j=0) 改为 0
   m3[1][0] = { display: "0", bugId: "asym" };
 
   return [
@@ -876,8 +884,9 @@ const BUG_CASES: BugCase[] = (() => {
     },
     {
       title: "案例 2 · 对称性 + 行标准化",
-      story: "这次的 W 矩阵藏着不对称、负值、行和不为 1 三种问题。",
+      story: "这次的 W 矩阵藏着不对称、负值、行和不为 1 三种问题。注意：行和问题要点击行标签 (A-I) 来标记！",
       matrix: m2,
+      rowBugs: { 7: "rowsum" }, // H 行：0.5 + 0.3 + 0.3 = 1.1
     },
     {
       title: "案例 3 · 综合排查",
@@ -900,7 +909,7 @@ function BugHunt() {
 
   const cs = BUG_CASES[caseIdx];
 
-  // 真实答案：cellKey -> bugId
+  // 真实答案：cellKey -> bugId（cell 用 "i,j"，行级用 "row:i"）
   const truth = useMemo(() => {
     const t: Record<string, string> = {};
     for (let i = 0; i < 9; i++) {
@@ -908,6 +917,11 @@ function BugHunt() {
         const b = cs.matrix[i][j].bugId;
         if (b) t[`${i},${j}`] = b;
       }
+    }
+    if (cs.rowBugs) {
+      Object.entries(cs.rowBugs).forEach(([i, b]) => {
+        t[`row:${i}`] = b;
+      });
     }
     return t;
   }, [cs]);
@@ -992,7 +1006,7 @@ function BugHunt() {
           </h2>
           <p className="text-xs text-muted-foreground mt-1">{cs.story}</p>
           <p className="text-xs text-primary mt-1.5">
-            👆 点击矩阵中任一可疑元素 wᵢⱼ，从弹窗选择问题类型并贴标签。
+            👆 点击矩阵元素 wᵢⱼ 标注单元格问题；点击行标签 (A-I) 标注"行和≠1"问题。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1058,17 +1072,109 @@ function BugHunt() {
               <tbody>
                 {cs.matrix.map((row, i) => {
                   const sum = rowSums[i];
-                  const sumOk = Math.abs(sum - 1) < 0.01 || sum === 0;
+                  // 行和判定：容差 0.02（容许 0.33+0.33+0.33=0.99 这种浮点误差）
+                  const sumOk = Math.abs(sum - 1) < 0.02 || sum === 0;
+                  const rowKey = `row:${i}`;
+                  const rowMark = marks[rowKey];
+                  const rowTruth = truth[rowKey];
+                  const rowMarkBug = rowMark ? BUG_TYPES.find((b) => b.id === rowMark) : null;
+                  const rowTruthBug = rowTruth ? BUG_TYPES.find((b) => b.id === rowTruth) : null;
+
+                  // 行标签的颜色逻辑（与单元格相似）
+                  let rowBg = "text-muted-foreground";
+                  if (hoverCell && Number(hoverCell.split(",")[0]) === i) rowBg = "text-primary";
+                  let rowBorder = "border-transparent";
+                  if (submitted) {
+                    if (rowMark && rowTruth && rowMark === rowTruth)
+                      rowBorder = "border-success bg-success/30";
+                    else if (rowMark && rowTruth && rowMark !== rowTruth)
+                      rowBorder = "border-warning bg-warning/30";
+                    else if (rowMark && !rowTruth)
+                      rowBorder = "border-destructive bg-destructive/30";
+                    else if (!rowMark && rowTruth)
+                      rowBorder = "border-warning border-dashed bg-warning/20";
+                  } else if (rowMark) {
+                    rowBorder = "border-primary bg-primary-soft";
+                  }
+
                   return (
                     <tr key={i}>
-                      <td
-                        className={`w-7 h-9 text-center font-bold ${
-                          hoverCell && Number(hoverCell.split(",")[0]) === i
-                            ? "text-primary"
-                            : "text-muted-foreground"
-                        }`}
-                      >
-                        {REGIONS[i]}
+                      <td className="p-0.5">
+                        <Popover
+                          open={openCell === rowKey}
+                          onOpenChange={(o) => setOpenCell(o ? rowKey : null)}
+                        >
+                          <PopoverTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={submitted}
+                              className={`relative w-7 h-9 rounded border ${rowBorder} text-center font-bold transition-all hover:scale-110 hover:z-10 disabled:hover:scale-100 ${rowBg}`}
+                              title={`点击标注 ${REGIONS[i]} 行的"行和≠1"问题`}
+                            >
+                              {REGIONS[i]}
+                              {rowMark && rowMarkBug && (
+                                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[8px] flex items-center justify-center font-bold shadow">
+                                  {rowMarkBug.emoji}
+                                </span>
+                              )}
+                              {submitted && !rowMark && rowTruthBug && (
+                                <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-warning text-warning-foreground text-[8px] flex items-center justify-center font-bold shadow">
+                                  {rowTruthBug.emoji}
+                                </span>
+                              )}
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-64 p-2" side="left">
+                            <div className="text-[11px] text-muted-foreground mb-2 px-1">
+                              <span className="font-mono font-bold text-foreground">
+                                {REGIONS[i]} 行 · Σⱼ w[{REGIONS[i]},j] = {smartSum(sum)}
+                              </span>
+                              <div className="mt-0.5">
+                                {sumOk
+                                  ? `✅ 行和已正确归一${sum === 0 ? "（孤岛行）" : ""}`
+                                  : `❌ 行和 ${smartSum(sum)} ≠ 1，违反行标准化`}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              {/* 只允许行级标签：rowsum */}
+                              {BUG_TYPES.filter((b) => b.id === "rowsum").map((b) => (
+                                <button
+                                  key={b.id}
+                                  type="button"
+                                  onClick={() => markCell(rowKey, b.id)}
+                                  className={`w-full text-left rounded p-1.5 text-xs transition-colors flex items-start gap-2 ${
+                                    rowMark === b.id
+                                      ? "bg-primary text-primary-foreground"
+                                      : "hover:bg-muted"
+                                  }`}
+                                >
+                                  <span className="text-base leading-none">{b.emoji}</span>
+                                  <div className="flex-1">
+                                    <div className="font-semibold">{b.short}</div>
+                                    <div
+                                      className={`text-[10px] leading-tight mt-0.5 ${
+                                        rowMark === b.id
+                                          ? "text-primary-foreground/80"
+                                          : "text-muted-foreground"
+                                      }`}
+                                    >
+                                      {b.label}
+                                    </div>
+                                  </div>
+                                </button>
+                              ))}
+                              {rowMark && (
+                                <button
+                                  type="button"
+                                  onClick={() => clearMark(rowKey)}
+                                  className="w-full text-left rounded p-1.5 text-[11px] text-muted-foreground hover:bg-muted border-t border-border mt-1 pt-2"
+                                >
+                                  ✕ 清除此行标记
+                                </button>
+                              )}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
                       </td>
                       <td className="w-3 text-muted-foreground text-center">→</td>
                       {row.map((c, j) => {
@@ -1193,7 +1299,7 @@ function BugHunt() {
                             sumOk ? "text-success" : "text-destructive"
                           }`}
                         >
-                          {sum.toFixed(2)}
+                          {smartSum(sum)}
                         </span>
                       </td>
                     </tr>
@@ -1259,7 +1365,7 @@ function BugHunt() {
             <div className="rounded-md border border-border bg-background p-2.5 space-y-2 max-h-[260px] overflow-y-auto">
               <div className="text-[11px] font-semibold">📖 答案解析</div>
               {Object.entries(truth).map(([key, bid]) => {
-                const [i, j] = key.split(",").map(Number);
+                const isRow = key.startsWith("row:");
                 const b = BUG_TYPES.find((x) => x.id === bid)!;
                 const userMark = marks[key];
                 const status =
@@ -1268,11 +1374,19 @@ function BugHunt() {
                     : userMark
                     ? { txt: "△ 标错类型", cls: "text-warning" }
                     : { txt: "✗ 遗漏", cls: "text-destructive" };
+                let label: string;
+                if (isRow) {
+                  const i = Number(key.slice(4));
+                  label = `${REGIONS[i]} 行 (Σ=${smartSum(rowSums[i])})`;
+                } else {
+                  const [i, j] = key.split(",").map(Number);
+                  label = `w[${REGIONS[i]},${REGIONS[j]}]`;
+                }
                 return (
                   <div key={key} className="text-[11px] border-l-2 border-border pl-2">
                     <div className="flex justify-between items-center">
                       <span className="font-mono">
-                        w[{REGIONS[i]},{REGIONS[j]}] {b.emoji} {b.short}
+                        {label} {b.emoji} {b.short}
                       </span>
                       <span className={`font-bold ${status.cls}`}>{status.txt}</span>
                     </div>
