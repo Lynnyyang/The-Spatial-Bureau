@@ -400,7 +400,7 @@ function HigherOrderLab() {
     kind: ChallengeKind;
     src: number;
     tgt?: number;
-    answer: number;
+    answers: number[]; // 任选一个即可；countPaths 时长度=1
     options?: number[];
     prompt: string;
   };
