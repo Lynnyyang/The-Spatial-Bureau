@@ -1365,7 +1365,7 @@ function BugHunt() {
             <div className="rounded-md border border-border bg-background p-2.5 space-y-2 max-h-[260px] overflow-y-auto">
               <div className="text-[11px] font-semibold">📖 答案解析</div>
               {Object.entries(truth).map(([key, bid]) => {
-                const [i, j] = key.split(",").map(Number);
+                const isRow = key.startsWith("row:");
                 const b = BUG_TYPES.find((x) => x.id === bid)!;
                 const userMark = marks[key];
                 const status =
@@ -1374,11 +1374,19 @@ function BugHunt() {
                     : userMark
                     ? { txt: "△ 标错类型", cls: "text-warning" }
                     : { txt: "✗ 遗漏", cls: "text-destructive" };
+                let label: string;
+                if (isRow) {
+                  const i = Number(key.slice(4));
+                  label = `${REGIONS[i]} 行 (Σ=${smartSum(rowSums[i])})`;
+                } else {
+                  const [i, j] = key.split(",").map(Number);
+                  label = `w[${REGIONS[i]},${REGIONS[j]}]`;
+                }
                 return (
                   <div key={key} className="text-[11px] border-l-2 border-border pl-2">
                     <div className="flex justify-between items-center">
                       <span className="font-mono">
-                        w[{REGIONS[i]},{REGIONS[j]}] {b.emoji} {b.short}
+                        {label} {b.emoji} {b.short}
                       </span>
                       <span className={`font-bold ${status.cls}`}>{status.txt}</span>
                     </div>
