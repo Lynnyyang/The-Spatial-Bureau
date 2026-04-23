@@ -212,7 +212,7 @@ function SpotChallenge({ W, award }: { W: number[][]; award: (n: number) => void
 }
 
 // ============ 挑战 2：影响波纹 ============
-function RippleChallenge({ scenario, W }: { scenario: Scenario; W: number[][] }) {
+function RippleChallenge({ W }: { W: number[][] }) {
   const [vals, setVals] = useState(() => generateClustered(99, 1));
   const [strength, setStrength] = useState([25]);
   const [radius, setRadius] = useState([2]);
