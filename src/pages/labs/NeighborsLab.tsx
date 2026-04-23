@@ -452,10 +452,10 @@ const SCENARIOS: Scenario[] = [
     id: "price",
     icon: Home,
     title: "房价空间联动",
-    story: "新域市分析师发现房价存在"参考效应"：买家通常对比附近最相似的若干个小区。每个小区被参考的对象数量基本一致。",
+    story: "新域市分析师发现房价存在「参考效应」：买家通常对比附近最相似的若干个小区。每个小区被参考的对象数量基本一致。",
     options: ["rook", "queen", "knn", "distance"],
     correct: "knn",
-    explain: "KNN 保证每个区域都有相同数量的邻居，正好契合"对比固定个数最相似/最近小区"的心理决策模式。",
+    explain: "KNN 保证每个区域都有相同数量的邻居，正好契合「对比固定个数最相似/最近小区」的心理决策模式。",
   },
   {
     id: "crime",
@@ -473,7 +473,7 @@ const SCENARIOS: Scenario[] = [
     story: "拥堵沿道路网络传导，直接相连的路段才会互相影响，斜对角的街区如果没有道路连通则不应视为邻居。",
     options: ["rook", "queen", "distance"],
     correct: "rook",
-    explain: "在网格化路网中，Rook（共边）最接近"沿道路相连"的拓扑关系；Queen 会错误地把无路径的对角街区算作邻居。",
+    explain: "在网格化路网中，Rook（共边）最接近「沿道路相连」的拓扑关系；Queen 会错误地把无路径的对角街区算作邻居。",
   },
   {
     id: "park",
