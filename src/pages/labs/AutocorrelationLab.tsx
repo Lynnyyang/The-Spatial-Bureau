@@ -9,7 +9,29 @@ import {
   buildNeighbors, generateClustered, lisa, moranPermutation,
   quadrantColor, rowStandardize, type Quadrant,
 } from "@/lib/spatial";
-import { Activity, Play } from "lucide-react";
+import { Activity, Play, Trophy, CheckCircle2, XCircle, ChevronRight, Target } from "lucide-react";
+import { useAppStore } from "@/store/app";
+import { toast } from "sonner";
+
+type StepId = "global-sign" | "significance" | "find-hh" | "find-ll" | "find-outlier";
+interface Step {
+  id: StepId;
+  title: string;
+  prompt: string;
+  hint: string;
+  type: "choice" | "pick";
+  options?: { label: string; value: string }[];
+  validate: (ans: string | number, ctx: ChallengeCtx) => boolean;
+  feedback: (ok: boolean, ctx: ChallengeCtx) => string;
+}
+interface ChallengeCtx {
+  I: number;
+  pseudoP: number;
+  expectedI: number;
+  hhSet: Set<number>;
+  llSet: Set<number>;
+  outlierSet: Set<number>;
+}
 
 const QUAD_INFO: Record<Quadrant, { label: string; desc: string }> = {
   HH: { label: "HH 热点", desc: "高值被高值包围" },
