@@ -76,28 +76,28 @@ function InfluenceMixer() {
       scenario: "coffee" as const,
       title: "第 1 关 · 小范围试营业",
       brief:
-        "网红咖啡店刚开业，老板想先做小范围测试：精准影响 4 个最近的邻居街区，且总扩散力（权重总和）控制在 2.5 ~ 3.5 之间。",
+        "网红咖啡店刚开业，老板想先做小范围测试：精准影响 4 个最近的邻居街区，权重总和在 3.5 ~ 4.5 之间。",
       targetReached: { min: 4, max: 4 },
-      targetSum: { min: 2.5, max: 3.5 },
-      hint: "提示：试试半径=1.0，让影响只覆盖正东南西北 4 格。",
+      targetSum: { min: 3.5, max: 4.5 },
+      hint: "提示：把半径调到 1.0，影响只覆盖正东南西北 4 格（每个权重 1，总和 4）。",
     },
     {
       scenario: "wifi" as const,
       title: "第 2 关 · 5G 信号覆盖",
       brief:
-        "新基站要求覆盖 8 个邻居街区，且因为信号衰减很快，权重总和应在 3.5 ~ 4.5 之间。",
+        "新基站要求覆盖 8 个邻居街区（包括对角），权重总和因衰减落在 6.0 ~ 7.5 之间。",
       targetReached: { min: 8, max: 8 },
-      targetSum: { min: 3.5, max: 4.5 },
-      hint: "提示：半径放大到能覆盖 Queen 八向（约 1.5），再调 α 让衰减明显。",
+      targetSum: { min: 6.0, max: 7.5 },
+      hint: "提示：半径 1.5 可覆盖 Queen 八向；α 在 0.5~2 之间调，让对角邻居权重明显小于直邻。",
     },
     {
       scenario: "rumor" as const,
       title: "第 3 关 · 全城八卦",
       brief:
-        "这条八卦极度劲爆，要让 ≥ 20 个街区知晓，但因为越远越模糊，权重总和必须 ≤ 8。",
+        "这条八卦极度劲爆，要让 ≥ 20 个街区知晓，但因为越远越模糊，权重总和必须 ≤ 10。",
       targetReached: { min: 20, max: 99 },
-      targetSum: { min: 0, max: 8 },
-      hint: "提示：把半径开大（≥3），并增大 α 让远处衰减更快、总权重不至于爆炸。",
+      targetSum: { min: 0, max: 10 },
+      hint: "提示：把半径开大到 2.5 或 3，并把 α 调到 ≥ 2 让远处快速衰减。",
     },
     {
       scenario: "coffee" as const,
@@ -106,7 +106,7 @@ function InfluenceMixer() {
         "老板希望影响范围内每个街区都获得几乎相同的热度（不要因距离打折）。覆盖恰好 12 个邻居，权重总和约 12（每个 ≈ 1）。",
       targetReached: { min: 12, max: 12 },
       targetSum: { min: 11, max: 13 },
-      hint: "提示：α 越接近 0，距离的影响越弱，所有邻居权重趋于相等。",
+      hint: "提示：半径=2.0 恰好包括 12 个邻居；α=0 时每个邻居权重都=1。",
     },
   ];
 
