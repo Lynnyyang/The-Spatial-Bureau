@@ -40,7 +40,7 @@ export default function WeightsLab() {
       <Tabs defaultValue="influence" className="w-full">
         <TabsList className="grid grid-cols-3 w-full">
           <TabsTrigger value="influence">📣 影响力调音台</TabsTrigger>
-          <TabsTrigger value="delivery">🏘️ 房价涟漪效应</TabsTrigger>
+          <TabsTrigger value="delivery">🌊 高阶邻居探秘</TabsTrigger>
           <TabsTrigger value="bug">🔍 矩阵找茬</TabsTrigger>
         </TabsList>
 
@@ -48,7 +48,7 @@ export default function WeightsLab() {
           <InfluenceMixer />
         </TabsContent>
         <TabsContent value="delivery" className="mt-4">
-          <HousingRipple />
+          <HigherOrderLab />
         </TabsContent>
         <TabsContent value="bug" className="mt-4">
           <BugHunt />
@@ -372,345 +372,393 @@ function InfluenceMixer() {
   );
 }
 
-// ============ 玩法二：房价涟漪效应 🏘️ ============
-// 故事：城市由 5×5 = 25 个学区房组成。点击其中一个学区作为"震源"，
-// 它的房价上涨会按 1/d^p 的距离衰减规律影响周边邻居。
-// 核心目标：让玩家直观看到"地图上的空间关系"如何对应到"权重矩阵的行/列"。
-// 交互：① 点地图选震源 → 高亮 W 矩阵的对应行 ② 悬停地图格 ↔ 悬停矩阵格双向联动
-// ③ 拖动半径 r、衰减 p → 实时观察矩阵稀疏度变化 ④ 切换行标准化
-function HousingRipple() {
+// ============ 玩法二：高阶邻居探秘 🌊 ============
+// 教学目标：让学生直观理解一阶 W¹（直接邻居）与二阶 W² = W·W（邻居的邻居）的差异。
+// 4×4 = 16 个街区，Rook 邻接。点击任一街区作为"消息源"，
+//   ① 切换"第 K 天"看 W^K 的扩散范围  ② 地图与矩阵第 i 行同步高亮
+//   ③ 点击矩阵单元格反查"为什么 j 是 i 的二阶邻居"——展示中间路径。
+function HigherOrderLab() {
   const award = useAppStore((s) => s.awardXp);
 
-  // ---- 地图配置：5×5 ----
-  const SIZE = 5;
-  const N = SIZE * SIZE; // 25
-
-  // 状态
-  const [source, setSource] = useState(12); // 中心 (2,2)
-  const [hover, setHover] = useState<number | null>(null);
-  const [radius, setRadius] = useState([2.5]);
-  const [decay, setDecay] = useState([2.0]);
-  const [rowStd, setRowStd] = useState(true);
-  const [explored, setExplored] = useState<Set<number>>(new Set([12]));
-
-  // 区名（生动一点）
-  const DISTRICT_NAMES = [
-    "海湾","江畔","山景","湖心","云端",
-    "梧桐","樱花","紫藤","枫林","桂园",
-    "金阙","玉壶","锦绣","翠微","玲珑",
-    "学府","书香","墨韵","笔耕","翰林",
-    "晨曦","暮霭","星辰","月华","流光",
+  const SIZE = 4;
+  const N = SIZE * SIZE; // 16
+  const NAMES = [
+    "A1","A2","A3","A4",
+    "B1","B2","B3","B4",
+    "C1","C2","C3","C4",
+    "D1","D2","D3","D4",
   ];
 
-  // 计算 W 矩阵（25×25）
-  const W = useMemo(() => {
-    const r = radius[0], p = decay[0];
+  const [source, setSource] = useState(5); // B2
+  const [order, setOrder] = useState<1 | 2>(1);
+  const [target, setTarget] = useState<number | null>(null);
+  const [explored, setExplored] = useState<Set<string>>(new Set());
+
+  // 一阶 Rook 邻居矩阵 W（0/1）
+  const W1 = useMemo(() => {
     const M: number[][] = Array.from({ length: N }, () => Array(N).fill(0));
     for (let i = 0; i < N; i++) {
       const ri = Math.floor(i / SIZE), ci = i % SIZE;
       for (let j = 0; j < N; j++) {
         if (i === j) continue;
         const rj = Math.floor(j / SIZE), cj = j % SIZE;
-        const d = Math.hypot(ri - rj, ci - cj);
-        if (d > r) continue;
-        M[i][j] = 1 / Math.pow(d, p);
-      }
-    }
-    if (rowStd) {
-      for (let i = 0; i < N; i++) {
-        const s = M[i].reduce((a, b) => a + b, 0);
-        if (s > 0) for (let j = 0; j < N; j++) M[i][j] /= s;
+        const dr = Math.abs(ri - rj), dc = Math.abs(ci - cj);
+        if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) M[i][j] = 1;
       }
     }
     return M;
-  }, [radius, decay, rowStd]);
+  }, []);
 
-  // 当前震源那一行
+  // 二阶矩阵 W² = W · W
+  const W2 = useMemo(() => {
+    const M: number[][] = Array.from({ length: N }, () => Array(N).fill(0));
+    for (let i = 0; i < N; i++) {
+      for (let j = 0; j < N; j++) {
+        let s = 0;
+        for (let k = 0; k < N; k++) s += W1[i][k] * W1[k][j];
+        M[i][j] = s;
+      }
+    }
+    return M;
+  }, [W1]);
+
+  const W = order === 1 ? W1 : W2;
   const row = W[source];
-  const maxW = Math.max(...row, 1e-9);
-  const neighborCount = row.filter((v) => v > 0).length;
-  const sumWeights = row.reduce((a, b) => a + b, 0);
 
-  // 探索奖励：第一次震中超过 5 个不同区域 +20 XP
+  const reach = useMemo(() => {
+    const set = new Set<number>();
+    for (let j = 0; j < N; j++) if (W[source][j] > 0) set.add(j);
+    return set;
+  }, [W, source]);
+
+  const paths = useMemo(() => {
+    if (target === null || target === source) return [];
+    const mids: number[] = [];
+    for (let k = 0; k < N; k++) {
+      if (W1[source][k] === 1 && W1[k][target] === 1) mids.push(k);
+    }
+    return mids;
+  }, [W1, source, target]);
+
   const onPickSource = (i: number) => {
     setSource(i);
+    setTarget(null);
     setExplored((prev) => {
-      if (prev.has(i)) return prev;
+      const key = `s${i}`;
+      if (prev.has(key)) return prev;
       const next = new Set(prev);
-      next.add(i);
-      if (prev.size === 4) {
+      next.add(key);
+      if (next.size === 6) {
         award(20);
-        toast.success("🎉 探索 5 个不同震源 +20 XP");
-      } else if (prev.size === 9) {
-        award(30);
-        toast.success("🏆 探索 10 个不同震源 +30 XP");
+        toast.success("🎉 探索 6 个不同消息源 +20 XP");
       }
       return next;
     });
   };
 
-  // 颜色：基于权重强度（橙色系）
-  const cellShade = (w: number) => {
-    if (w <= 0) return "hsl(var(--muted) / 0.3)";
-    const t = Math.min(1, w / maxW);
-    // 从淡橙到深橙
-    const lightness = 92 - t * 50;
-    return `hsl(24 95% ${lightness}%)`;
+  const switchOrder = (k: 1 | 2) => {
+    setOrder(k);
+    setTarget(null);
+    setExplored((prev) => {
+      if (k === 2 && !prev.has("o2")) {
+        const next = new Set(prev);
+        next.add("o2");
+        award(15);
+        toast.success("🌊 第一次切换到二阶 W² · +15 XP");
+        return next;
+      }
+      return prev;
+    });
+  };
+
+  const cellShade = (val: number) => {
+    if (val <= 0) return "hsl(var(--muted) / 0.25)";
+    const maxV = Math.max(1, ...row);
+    const t = Math.min(1, val / maxV);
+    return `hsl(212 80% ${82 - t * 40}%)`;
   };
 
   return (
     <div className="space-y-4">
       {/* 故事卡 */}
-      <Card className="p-4 shadow-panel border-border/60 bg-gradient-to-br from-orange-50/50 to-transparent dark:from-orange-950/20">
+      <Card className="p-4 shadow-panel border-border/60 bg-primary-soft/30">
         <div className="flex items-start gap-3">
-          <div className="text-3xl">🏘️</div>
+          <div className="text-3xl">🌊</div>
           <div className="flex-1">
-            <div className="font-semibold text-sm mb-1">房价涟漪效应：地图 ↔ 矩阵 双向对应</div>
+            <div className="font-semibold text-sm mb-1">高阶邻居探秘：一阶 W¹ vs 二阶 W²</div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              这个城市有 25 个学区。<strong className="text-foreground">点击地图上任意一个学区</strong>作为"房价震源"——
-              它的房价上涨会按 <span className="font-mono text-primary">1/d^p</span> 衰减扩散到邻居。
-              观察：地图上的颜色深浅 = 权重矩阵 W 中"震源那一行"的对应单元格。
+              一条小道消息从消息源传出。<strong className="text-foreground">第 1 天</strong>只到"直接邻居"——
+              这就是一阶矩阵 <span className="font-mono text-primary">W¹</span>；
+              <strong className="text-foreground"> 第 2 天</strong>这些邻居又传给自己的邻居——
+              这就是二阶矩阵 <span className="font-mono text-primary">W² = W · W</span>。
+              W²[i,j] 的值 = 从 i 经过 1 个中间街区到 j 的<strong className="text-foreground">路径数量</strong>。
             </p>
           </div>
-          <Badge variant="outline" className="font-mono text-[10px]">
-            已探索 {explored.size}/25
-          </Badge>
         </div>
       </Card>
 
-      <div className="grid lg:grid-cols-[420px_1fr] gap-4">
+      <div className="grid lg:grid-cols-[1fr_1fr] gap-4">
         {/* ===== 左：地图 ===== */}
-        <div className="space-y-3">
-          <Card className="p-4 shadow-panel border-border/60">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs font-mono text-muted-foreground">城市地图 (5×5)</div>
-              <Badge className="bg-orange-600 hover:bg-orange-600 text-white font-mono text-[10px]">
-                震源 #{source} · {DISTRICT_NAMES[source]}
-              </Badge>
-            </div>
+        <Card className="p-4 shadow-panel border-border/60">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-mono text-muted-foreground">城市地图 (4×4 · Rook 邻接)</div>
+            <Badge className="font-mono text-[10px]">消息源：{NAMES[source]}</Badge>
+          </div>
 
-            <div className="grid grid-cols-5 gap-1.5 aspect-square">
-              {Array.from({ length: N }).map((_, i) => {
-                const isSource = i === source;
-                const w = row[i];
-                const isHover = hover === i;
-                const isMatrixHoverPair = hover !== null && hover === i;
-                return (
-                  <button
-                    key={i}
-                    onMouseEnter={() => setHover(i)}
-                    onMouseLeave={() => setHover(null)}
-                    onClick={() => onPickSource(i)}
-                    className={`relative rounded-md border-2 flex flex-col items-center justify-center transition-all duration-200 ${
-                      isSource
-                        ? "border-orange-600 ring-2 ring-orange-300 scale-105 z-10 shadow-lg"
-                        : isHover
-                        ? "border-primary scale-105 z-10"
-                        : "border-border/50 hover:border-primary/50"
+          <div className="flex gap-2 mb-3">
+            <Button
+              size="sm"
+              variant={order === 1 ? "default" : "outline"}
+              onClick={() => switchOrder(1)}
+              className="flex-1"
+            >
+              第 1 天 · 一阶 W¹
+            </Button>
+            <Button
+              size="sm"
+              variant={order === 2 ? "default" : "outline"}
+              onClick={() => switchOrder(2)}
+              className="flex-1"
+            >
+              第 2 天 · 二阶 W²
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1.5 aspect-square">
+            {Array.from({ length: N }).map((_, i) => {
+              const isSource = i === source;
+              const isTarget = i === target;
+              const v = row[i];
+              const isOnPath = paths.includes(i);
+              return (
+                <button
+                  key={i}
+                  onClick={() => {
+                    if (i === source) return;
+                    setTarget(target === i ? null : i);
+                  }}
+                  onDoubleClick={() => onPickSource(i)}
+                  title={
+                    isSource
+                      ? "消息源（双击其他格切换）"
+                      : v > 0
+                      ? `W^${order}[${source},${i}] = ${v}（点击查看路径，双击设为新消息源）`
+                      : "未被波及（双击设为新消息源）"
+                  }
+                  className={`relative rounded-md border-2 flex flex-col items-center justify-center transition-all ${
+                    isSource
+                      ? "border-primary ring-2 ring-primary/40 scale-105 z-10"
+                      : isTarget
+                      ? "border-warning ring-2 ring-warning/40 scale-105 z-10"
+                      : isOnPath
+                      ? "border-success"
+                      : "border-border/50 hover:border-primary/50"
+                  }`}
+                  style={{
+                    backgroundColor: isSource ? "hsl(var(--primary))" : cellShade(v),
+                  }}
+                >
+                  <span
+                    className={`text-[10px] font-mono ${
+                      isSource ? "text-primary-foreground font-bold" : "text-foreground"
                     }`}
-                    style={{
-                      backgroundColor: isSource ? "hsl(24 95% 55%)" : cellShade(w),
-                    }}
                   >
-                    <span
-                      className={`text-[9px] font-mono ${
-                        isSource ? "text-white font-bold" : w > maxW * 0.4 ? "text-orange-900" : "text-muted-foreground"
-                      }`}
-                    >
-                      {DISTRICT_NAMES[i]}
+                    {NAMES[i]}
+                  </span>
+                  {isSource ? (
+                    <span className="text-[9px] text-primary-foreground">📣 源</span>
+                  ) : v > 0 ? (
+                    <span className="text-[10px] font-mono font-bold text-foreground/80">
+                      {order === 2 ? `${v}条路径` : "邻居"}
                     </span>
-                    {(isSource || w > 0) && (
-                      <span
-                        className={`text-[10px] font-mono font-bold ${
-                          isSource ? "text-white" : "text-orange-900/80"
-                        }`}
-                      >
-                        {isSource ? "震源" : w.toFixed(rowStd ? 2 : 2)}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                  ) : (
+                    <span className="text-[9px] text-muted-foreground">—</span>
+                  )}
+                  {isOnPath && (
+                    <span className="absolute top-0 right-0.5 text-[10px]">🔗</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
-              <div className="rounded bg-muted/40 p-2">
-                <div className="text-muted-foreground">受影响</div>
-                <div className="font-mono font-bold text-orange-600">{neighborCount} 个</div>
+          <div className="mt-3 text-[11px] text-muted-foreground space-y-1">
+            <div>👆 单击：选目标格查看 2 步路径 · 双击：切换消息源</div>
+            <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="rounded bg-muted/40 p-2 text-center">
+                <div>波及数</div>
+                <div className="font-mono font-bold text-primary text-base">{reach.size}</div>
               </div>
-              <div className="rounded bg-muted/40 p-2">
-                <div className="text-muted-foreground">权重总和</div>
-                <div className="font-mono font-bold text-orange-600">{sumWeights.toFixed(2)}</div>
+              <div className="rounded bg-muted/40 p-2 text-center">
+                <div>{order === 2 ? "总路径数" : "邻居数"}</div>
+                <div className="font-mono font-bold text-primary text-base">
+                  {row.reduce((a, b) => a + b, 0)}
+                </div>
               </div>
-              <div className="rounded bg-muted/40 p-2">
-                <div className="text-muted-foreground">最大权重</div>
-                <div className="font-mono font-bold text-orange-600">{maxW.toFixed(2)}</div>
+              <div className="rounded bg-muted/40 p-2 text-center">
+                <div>当前阶</div>
+                <div className="font-mono font-bold text-primary text-base">W^{order}</div>
               </div>
             </div>
-          </Card>
+          </div>
+        </Card>
 
-          {/* 调音台 */}
-          <Card className="p-4 shadow-panel border-border/60 space-y-4">
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm">影响半径 r</span>
-                <span className="font-mono text-sm font-semibold text-primary">{radius[0].toFixed(1)} 格</span>
-              </div>
-              <Slider min={1} max={5} step={0.5} value={radius} onValueChange={setRadius} />
-              <p className="text-[11px] text-muted-foreground mt-1">超过 r 的距离权重直接 = 0（截断带宽）。</p>
-            </div>
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-sm">距离衰减幂 p</span>
-                <span className="font-mono text-sm font-semibold text-primary">{decay[0].toFixed(1)}</span>
-              </div>
-              <Slider min={0.5} max={4} step={0.1} value={decay} onValueChange={setDecay} />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                <span className="font-mono">w = 1/d^p</span>。p 越大，远处衰减越快。
-              </p>
-            </div>
-            <div className="flex items-center justify-between p-2 rounded bg-muted/40">
-              <div>
-                <div className="text-sm">行标准化</div>
-                <p className="text-[10px] text-muted-foreground">让每行权重和 = 1（除对角）</p>
-              </div>
-              <Button
-                size="sm"
-                variant={rowStd ? "default" : "outline"}
-                onClick={() => setRowStd(!rowStd)}
-              >
-                {rowStd ? "✓ 已开启" : "未开启"}
-              </Button>
-            </div>
-          </Card>
-        </div>
-
-        {/* ===== 右：矩阵视图 ===== */}
+        {/* ===== 右：矩阵 + 解释 ===== */}
         <div className="space-y-3">
-          {/* 当前行的权重条 */}
           <Card className="p-4 shadow-panel border-border/60">
             <div className="flex items-center justify-between mb-3">
               <div className="text-xs font-mono text-muted-foreground">
-                W[{source}, *] · 震源「{DISTRICT_NAMES[source]}」对所有邻居的权重
+                W^{order} 矩阵 (16×16) · 第 {source} 行 ({NAMES[source]}) 高亮
               </div>
               <Badge variant="outline" className="font-mono text-[10px]">
-                这就是矩阵的第 {source} 行
+                {order === 1 ? "0/1 邻接" : "整数=路径数"}
               </Badge>
             </div>
-            <div className="space-y-1 max-h-[200px] overflow-y-auto pr-1">
-              {row
-                .map((w, j) => ({ w, j }))
-                .filter((x) => x.w > 0)
-                .sort((a, b) => b.w - a.w)
-                .slice(0, 10)
-                .map(({ w, j }) => {
-                  const ri = Math.floor(source / SIZE), ci = source % SIZE;
-                  const rj = Math.floor(j / SIZE), cj = j % SIZE;
-                  const d = Math.hypot(ri - rj, ci - cj);
-                  const isHover = hover === j;
-                  return (
-                    <div
-                      key={j}
-                      onMouseEnter={() => setHover(j)}
-                      onMouseLeave={() => setHover(null)}
-                      className={`flex items-center gap-2 p-1.5 rounded text-[11px] cursor-pointer transition-colors ${
-                        isHover ? "bg-primary/10 ring-1 ring-primary" : "hover:bg-muted/40"
-                      }`}
-                    >
-                      <span className="font-mono w-20 text-muted-foreground">
-                        W[{source},{j}]
-                      </span>
-                      <span className="font-medium w-16 truncate">{DISTRICT_NAMES[j]}</span>
-                      <span className="font-mono text-[10px] text-muted-foreground w-14">
-                        d={d.toFixed(2)}
-                      </span>
-                      <div className="flex-1 h-2 bg-muted/40 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-orange-500 transition-all"
-                          style={{ width: `${(w / maxW) * 100}%` }}
-                        />
-                      </div>
-                      <span className="font-mono font-bold text-orange-600 w-12 text-right">
-                        {w.toFixed(3)}
-                      </span>
-                    </div>
-                  );
-                })}
-              {neighborCount === 0 && (
-                <div className="text-center py-6 text-xs text-muted-foreground">
-                  半径太小，没有邻居被影响。试着调大 r。
-                </div>
-              )}
-            </div>
-          </Card>
-
-          {/* 25×25 全矩阵热图 */}
-          <Card className="p-4 shadow-panel border-border/60">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs font-mono text-muted-foreground">
-                完整 W 矩阵 (25×25) · 第 {source} 行高亮
-              </div>
-              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <div className="size-2 rounded-sm bg-orange-500" /> 高权重
-                <div className="size-2 rounded-sm bg-orange-200" /> 低权重
-                <div className="size-2 rounded-sm bg-muted" /> 0
-              </div>
-            </div>
-            <div className="aspect-square w-full max-w-[420px] mx-auto">
-              <svg viewBox="0 0 250 250" className="w-full h-auto border border-border rounded">
+            <div className="aspect-square w-full max-w-[360px] mx-auto">
+              <svg viewBox="0 0 160 160" className="w-full h-auto border border-border rounded">
                 {W.map((rowVals, i) =>
                   rowVals.map((v, j) => {
-                    const isSrcRow = i === source;
-                    const isSrcCol = j === source;
-                    const isHoverCell = hover !== null && (i === source && j === hover);
+                    const maxV = Math.max(1, ...row);
                     let fill = "hsl(var(--muted) / 0.3)";
                     if (v > 0) {
-                      const t = Math.min(1, v / maxW);
-                      fill = `hsl(24 95% ${92 - t * 55}%)`;
+                      const t = Math.min(1, v / maxV);
+                      fill = `hsl(212 80% ${85 - t * 45}%)`;
                     }
                     if (i === j) fill = "hsl(var(--border))";
+                    const isSrcRow = i === source;
+                    const isTargetCell = i === source && j === target;
                     return (
-                      <rect
-                        key={`${i}-${j}`}
-                        x={j * 10}
-                        y={i * 10}
-                        width={9.5}
-                        height={9.5}
-                        fill={fill}
-                        stroke={
-                          isHoverCell
-                            ? "hsl(var(--primary))"
-                            : isSrcRow || isSrcCol
-                            ? "hsl(24 95% 55% / 0.4)"
-                            : "none"
-                        }
-                        strokeWidth={isHoverCell ? 1.5 : isSrcRow || isSrcCol ? 0.5 : 0}
-                        onMouseEnter={() => i === source && setHover(j)}
-                        onMouseLeave={() => setHover(null)}
-                        style={{ cursor: i === source ? "pointer" : "default" }}
-                      >
-                        <title>{`W[${i}][${j}] = ${v.toFixed(3)}`}</title>
-                      </rect>
+                      <g key={`${i}-${j}`}>
+                        <rect
+                          x={j * 10}
+                          y={i * 10}
+                          width={9.5}
+                          height={9.5}
+                          fill={fill}
+                          stroke={
+                            isTargetCell
+                              ? "hsl(var(--warning))"
+                              : isSrcRow
+                              ? "hsl(var(--primary) / 0.5)"
+                              : "none"
+                          }
+                          strokeWidth={isTargetCell ? 1.6 : isSrcRow ? 0.5 : 0}
+                          onClick={() => {
+                            if (i === source && j !== source) setTarget(target === j ? null : j);
+                          }}
+                          style={{ cursor: i === source && j !== source ? "pointer" : "default" }}
+                        >
+                          <title>{`W^${order}[${i}][${j}] = ${v}`}</title>
+                        </rect>
+                        {isSrcRow && v > 0 && (
+                          <text
+                            x={j * 10 + 4.75}
+                            y={i * 10 + 7}
+                            textAnchor="middle"
+                            fontSize="6"
+                            fontFamily="monospace"
+                            fontWeight="bold"
+                            fill="hsl(var(--foreground))"
+                            pointerEvents="none"
+                          >
+                            {v}
+                          </text>
+                        )}
+                      </g>
                     );
                   })
                 )}
-                {/* 高亮震源行 */}
                 <rect
                   x={0}
                   y={source * 10}
-                  width={250}
+                  width={160}
                   height={10}
                   fill="none"
-                  stroke="hsl(24 95% 55%)"
+                  stroke="hsl(var(--primary))"
                   strokeWidth={1.2}
                 />
               </svg>
             </div>
-            <p className="text-[11px] text-muted-foreground mt-2 text-center leading-relaxed">
-              💡 第 <span className="font-mono text-orange-600">{source}</span> 行的橙色单元格 ↔ 地图上同样颜色的格子。
-              <br />
-              改变震源、半径或衰减幂，矩阵的稀疏度与热度会同步变化。
+            <p className="text-[11px] text-muted-foreground mt-2 text-center">
+              💡 蓝色行 = 消息源对所有街区的影响向量。点击该行任一格查看路径解释。
             </p>
+          </Card>
+
+          {/* 路径解释面板 */}
+          <Card className="p-4 shadow-panel border-border/60">
+            {target === null ? (
+              <div className="text-xs text-muted-foreground text-center py-4 leading-relaxed">
+                {order === 1 ? (
+                  <>👈 点击地图或矩阵中的任一格，查看它与 <strong>{NAMES[source]}</strong> 是否直接相邻。</>
+                ) : (
+                  <>👈 点击地图或矩阵中的任一格，查看从 <strong>{NAMES[source]}</strong> 到它的所有 <strong>2 步路径</strong>。</>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2 text-xs">
+                <div className="font-semibold text-sm flex items-center gap-2">
+                  <Search className="h-4 w-4 text-primary" />
+                  路径分析：{NAMES[source]} → {NAMES[target]}
+                </div>
+                {order === 1 ? (
+                  W1[source][target] === 1 ? (
+                    <div className="rounded bg-success/10 border border-success/30 p-2 leading-relaxed">
+                      ✅ <strong>{NAMES[source]}</strong> 与 <strong>{NAMES[target]}</strong> 是
+                      <strong className="text-success"> 直接邻居</strong>，
+                      所以 W¹[{source},{target}] = <span className="font-mono">1</span>。
+                    </div>
+                  ) : (
+                    <div className="rounded bg-muted/40 border border-border p-2 leading-relaxed">
+                      ❌ 它们不是直接邻居，所以 W¹[{source},{target}] = <span className="font-mono">0</span>。
+                      切换到 <strong>第 2 天</strong> 看看二阶能不能到达。
+                    </div>
+                  )
+                ) : paths.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <div className="rounded bg-primary-soft/40 border border-primary/30 p-2 leading-relaxed">
+                      ✅ 共找到 <strong className="text-primary">{paths.length}</strong> 条 2 步路径，
+                      所以 W²[{source},{target}] = <span className="font-mono font-bold">{paths.length}</span>。
+                    </div>
+                    {paths.map((k) => (
+                      <div
+                        key={k}
+                        className="flex items-center gap-2 p-1.5 rounded bg-muted/40 font-mono text-[11px]"
+                      >
+                        <Badge variant="outline" className="font-mono">{NAMES[source]}</Badge>
+                        <span>→</span>
+                        <Badge className="font-mono bg-success text-success-foreground hover:bg-success">{NAMES[k]}</Badge>
+                        <span>→</span>
+                        <Badge variant="outline" className="font-mono">{NAMES[target]}</Badge>
+                        <span className="ml-auto text-muted-foreground text-[10px]">中间：{NAMES[k]}</span>
+                      </div>
+                    ))}
+                    <p className="text-[10px] text-muted-foreground italic mt-1">
+                      🧮 公式：W²[i,j] = Σₖ W[i,k] · W[k,j]，求和等于路径数。
+                    </p>
+                  </div>
+                ) : target === source ? (
+                  <div className="rounded bg-muted/40 border border-border p-2">
+                    自己回到自己的路径数 = 邻居数（每个邻居走过去再走回来）。
+                  </div>
+                ) : (
+                  <div className="rounded bg-muted/40 border border-border p-2 leading-relaxed">
+                    ❌ 没有 2 步路径。<strong>{NAMES[target]}</strong> 离 <strong>{NAMES[source]}</strong> 太远，
+                    需要更高阶的 W³ 才能到达。
+                  </div>
+                )}
+              </div>
+            )}
+          </Card>
+
+          {/* 教学提示 */}
+          <Card className="p-3 shadow-panel border-border/60 bg-muted/20">
+            <div className="text-[11px] leading-relaxed text-muted-foreground space-y-1">
+              <div>📘 <strong className="text-foreground">关键洞察：</strong></div>
+              <div>• W¹ 只能告诉你"谁挨着谁"——这是<strong>直接</strong>空间依赖。</div>
+              <div>• W² 揭示"谁能在 2 步内被影响"——这是<strong>间接</strong>溢出效应。</div>
+              <div>• W²[i,i] &gt; 0 说明从 i 出发走 2 步能回到自己（=邻居数）。</div>
+              <div>• 一般地，W^K 描述<strong>第 K 阶</strong>空间关系，是空间滞后模型 (SAR/SLM) 的核心。</div>
+            </div>
           </Card>
         </div>
       </div>
