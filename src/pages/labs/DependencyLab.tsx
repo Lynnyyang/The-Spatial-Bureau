@@ -482,7 +482,7 @@ function BlurChallenge({ W }: { W: number[][] }) {
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 4 / 5 · 机制理解</div>
           <h2 className="text-lg font-semibold">从随机到聚集：平滑过程的秘密</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            真实世界的{scenario.name}并非凭空聚集，而是因为"邻里之间相互影响"。拖动平滑半径，看随机如何被塑造成依赖。
+            真实世界的城市温度并非凭空聚集，而是因为"邻里之间热量相互传导"。拖动平滑半径，看随机如何被塑造成依赖。
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => setSeed((s) => s + 1)}>
