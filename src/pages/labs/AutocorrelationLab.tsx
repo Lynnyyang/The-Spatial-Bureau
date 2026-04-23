@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { GridCity } from "@/components/GridCity";
+import { HexCity } from "@/components/HexCity";
 import { MoranScatter } from "@/components/MoranScatter";
 import {
   buildNeighbors, generateClustered, lisa, moranPermutation,
@@ -345,7 +345,7 @@ export default function AutocorrelationLab() {
             </div>
           </div>
           <Slider min={0.01} max={0.10} step={0.01} value={[alpha]} onValueChange={(v) => setAlpha(v[0])} className="mb-3" />
-          <GridCity
+          <HexCity
             values={values}
             size={460}
             selected={selected}
