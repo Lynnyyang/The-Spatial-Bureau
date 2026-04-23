@@ -264,7 +264,29 @@ export default function AutocorrelationLab() {
               </div>
             )}
 
-            {currentStep.type === "pick" && (
+            {currentStep.type === "pick" && currentStep.id === "find-outlier" && ctx.outlierSet.size === 0 ? (
+              <div className="flex items-center justify-between gap-3 bg-warning/10 rounded-md px-3 py-2 flex-wrap">
+                <div className="text-xs text-warning-foreground">
+                  ⚠️ 本组数据没有显著的 HL/LH 异常点。可直接结业，或换一组更"参差"的数据。
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setSeed((s) => s + 1)}>
+                    换一组数据
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setAnswered((a) => ({ ...a, [stepIdx]: true }));
+                      setFeedback({ ok: true, msg: "已确认无异常点 —— 这本身就是一种重要结论。" });
+                      awardXp(10);
+                      toast.success("+10 XP");
+                    }}
+                  >
+                    确认无异常,结业
+                  </Button>
+                </div>
+              </div>
+            ) : currentStep.type === "pick" && (
               <div className="text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
                 👇 在下方 LISA 地图或散点图上点击你认为符合条件的区域。
               </div>
