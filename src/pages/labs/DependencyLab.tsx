@@ -550,10 +550,13 @@ function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
     for (let j = 0; j < TOTAL; j++) if (W[hidden][j] > 0) ns.push(j);
     return ns;
   }, [W, hidden]);
+  const neighborVals = useMemo(() => neighbors.map((j) => vals[j]), [neighbors, vals]);
   const neighborMean = useMemo(
-    () => neighbors.reduce((a, j) => a + vals[j], 0) / (neighbors.length || 1),
-    [neighbors, vals]
+    () => neighborVals.reduce((a, b) => a + b, 0) / (neighborVals.length || 1),
+    [neighborVals]
   );
+  const neighborMin = useMemo(() => (neighborVals.length ? Math.min(...neighborVals) : 0), [neighborVals]);
+  const neighborMax = useMemo(() => (neighborVals.length ? Math.max(...neighborVals) : 100), [neighborVals]);
   const globalMean = useMemo(() => vals.reduce((a, b) => a + b, 0) / TOTAL, [vals]);
 
   const submit = () => {
