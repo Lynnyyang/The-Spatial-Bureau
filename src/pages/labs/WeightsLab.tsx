@@ -1299,7 +1299,7 @@ function BugHunt() {
                             sumOk ? "text-success" : "text-destructive"
                           }`}
                         >
-                          {sum.toFixed(2)}
+                          {smartSum(sum)}
                         </span>
                       </td>
                     </tr>
