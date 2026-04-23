@@ -590,7 +590,7 @@ function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 5 / 5 · 实战推理</div>
           <h2 className="text-lg font-semibold">缺失值预测：邻居能告诉你多少？</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            高亮区域的{scenario.name}值被隐藏。利用周围邻居信息，估计它的数值。这就是"地理学第一定律"的实战。
+            高亮区域的温度数值被遮挡。利用周围邻居信息，估计它的数值。这就是"地理学第一定律"的实战。
           </p>
         </div>
         <div className="flex items-center gap-3">
