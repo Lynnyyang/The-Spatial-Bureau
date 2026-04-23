@@ -165,7 +165,8 @@ function InfluenceMixer() {
     return out;
   }, [center, radius, decay]);
 
-  const reachedCount = values.filter((v) => v > 0 && v < 100).length;
+  // 被影响街区：半径内、非中心、且权重 > 0 的格子（包含 d=1 直邻和 α=0 时的等权邻居）
+  const reachedCount = values.filter((v, i) => i !== center && v > 0).length;
   const sumWeights = values.reduce((a, v, i) => (i === center ? a : a + v / 100), 0);
 
   // 判定
