@@ -400,7 +400,7 @@ function HigherOrderLab() {
     kind: ChallengeKind;
     src: number;
     tgt?: number;
-    answer: number;
+    answers: number[]; // 任选一个即可；countPaths 时长度=1
     options?: number[];
     prompt: string;
   };
@@ -503,55 +503,54 @@ function HigherOrderLab() {
     const src = Math.floor(Math.random() * N);
 
     if (kind === "max2") {
-      // 自动切到 W²，让玩家点出 W²[src,*] 最大的那个 j（排除 src 本身的对角项）
+      // W² 中 W²[src,*] 取得最大值的所有 j 都是正确答案
       setOrder(2);
       setSource(src);
       const rowVals = W2[src];
-      let maxV = -1, ans = -1;
+      let maxV = -1;
       for (let j = 0; j < N; j++) {
         if (j === src) continue;
-        if (rowVals[j] > maxV) { maxV = rowVals[j]; ans = j; }
+        if (rowVals[j] > maxV) maxV = rowVals[j];
       }
+      const answers: number[] = [];
+      for (let j = 0; j < N; j++) {
+        if (j === src) continue;
+        if (rowVals[j] === maxV && maxV > 0) answers.push(j);
+      }
+      if (answers.length === 0) { setTimeout(nextChallenge, 0); return; }
       setChallenge({
-        kind, src, answer: ans,
-        prompt: `🏆 二阶热点：从 ${NAMES[src]} 出发，哪个街区在 W² 中拥有最多 2 步路径？（点地图作答）`,
+        kind, src, answers,
+        prompt: `🏆 二阶热点：从 ${NAMES[src]} 出发，哪个街区在 W² 中拥有最多 2 步路径？<span class="text-muted-foreground">（共 ${answers.length} 个正确答案，任选其一）</span>`,
       });
     } else if (kind === "onlyVia2") {
-      // 找一个 j，使 W¹[src,j] = 0 且 W²[src,j] > 0
+      // 所有满足 W¹[src,j] = 0 且 W²[src,j] > 0 的 j 都对
       setOrder(2);
       setSource(src);
-      const cands: number[] = [];
+      const answers: number[] = [];
       for (let j = 0; j < N; j++) {
         if (j === src) continue;
-        if (W1[src][j] === 0 && W2[src][j] > 0) cands.push(j);
+        if (W1[src][j] === 0 && W2[src][j] > 0) answers.push(j);
       }
-      if (cands.length === 0) {
-        // 换一个源
-        setTimeout(nextChallenge, 0);
-        return;
-      }
-      const ans = rngPick(cands);
+      if (answers.length === 0) { setTimeout(nextChallenge, 0); return; }
       setChallenge({
-        kind, src, answer: ans,
-        prompt: `🌉 桥接挑战：找一个街区——它<strong class="text-foreground">不是 ${NAMES[src]} 的直接邻居</strong>，但能在 <strong class="text-foreground">2 步内</strong>被影响。（点地图作答）`,
+        kind, src, answers,
+        prompt: `🌉 桥接挑战：找一个街区——它<strong class="text-foreground">不是 ${NAMES[src]} 的直接邻居</strong>，但能在 <strong class="text-foreground">2 步内</strong>被影响。<span class="text-muted-foreground">（共 ${answers.length} 个正确答案，任选其一）</span>`,
       });
     } else {
-      // countPaths：固定 src 与 tgt，问路径数
+      // countPaths：固定 src 与 tgt，问路径数（唯一答案）
       setOrder(2);
       setSource(src);
-      // 找一个 W²[src,tgt] > 0 的 tgt
       const cands: number[] = [];
       for (let j = 0; j < N; j++) if (j !== src && W2[src][j] > 0) cands.push(j);
       if (cands.length === 0) { setTimeout(nextChallenge, 0); return; }
       const tgt = rngPick(cands);
       const ans = W2[src][tgt];
-      // 4 个选项：包含正确答案，加几个干扰项
       const optsSet = new Set<number>([ans]);
       while (optsSet.size < 4) optsSet.add(Math.max(0, ans + Math.floor(Math.random() * 5) - 2));
       const options = Array.from(optsSet).sort((a, b) => a - b);
       setTarget(tgt);
       setChallenge({
-        kind, src, tgt, answer: ans, options,
+        kind, src, tgt, answers: [ans], options,
         prompt: `🧮 路径计数：从 <strong class="text-foreground">${NAMES[src]}</strong> 到 <strong class="text-foreground">${NAMES[tgt]}</strong> 共有几条 2 步路径？`,
       });
     }
@@ -559,7 +558,7 @@ function HigherOrderLab() {
 
   const submitAnswer = (val: number) => {
     if (!challenge) return;
-    const ok = val === challenge.answer;
+    const ok = challenge.answers.includes(val);
     if (ok) {
       const xp = 15 + streak * 5;
       award(xp);
@@ -570,16 +569,16 @@ function HigherOrderLab() {
       toast.success(`+${xp} XP · 连胜 ${newStreak}`);
     } else {
       setStreak(0);
-      const ansName = NAMES[challenge.answer] ?? challenge.answer;
-      setFeedback({
-        ok: false,
-        msg:
-          challenge.kind === "countPaths"
-            ? `❌ 正确答案是 ${challenge.answer} 条路径。`
-            : `❌ 正确答案是 ${ansName}。看看路径解释面板。`,
-      });
-      // 自动展示正确答案的路径
-      if (challenge.kind !== "countPaths") setTarget(challenge.answer);
+      if (challenge.kind === "countPaths") {
+        setFeedback({ ok: false, msg: `❌ 正确答案是 ${challenge.answers[0]} 条路径。` });
+      } else {
+        const ansNames = challenge.answers.map((a) => NAMES[a]).join("、");
+        setFeedback({
+          ok: false,
+          msg: `❌ 正确答案${challenge.answers.length > 1 ? `有 ${challenge.answers.length} 个：` : "是 "}${ansNames}。看看路径解释面板。`,
+        });
+        setTarget(challenge.answers[0]);
+      }
     }
   };
 
@@ -900,7 +899,7 @@ function HigherOrderLab() {
                         size="sm"
                         variant={
                           feedback
-                            ? opt === challenge.answer
+                            ? challenge.answers.includes(opt)
                               ? "default"
                               : "outline"
                             : "outline"
@@ -908,7 +907,7 @@ function HigherOrderLab() {
                         disabled={!!feedback}
                         onClick={() => submitAnswer(opt)}
                         className={
-                          feedback && opt === challenge.answer
+                          feedback && challenge.answers.includes(opt)
                             ? "bg-success text-success-foreground hover:bg-success"
                             : ""
                         }
