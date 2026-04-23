@@ -493,6 +493,98 @@ function HigherOrderLab() {
     return `hsl(212 80% ${82 - t * 40}%)`;
   };
 
+  // ---- 挑战生成 & 校验 ----
+  const rngPick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
+
+  const nextChallenge = () => {
+    setFeedback(null);
+    setTarget(null);
+    const kind = rngPick<ChallengeKind>(["max2", "countPaths", "onlyVia2"]);
+    const src = Math.floor(Math.random() * N);
+
+    if (kind === "max2") {
+      // 自动切到 W²，让玩家点出 W²[src,*] 最大的那个 j（排除 src 本身的对角项）
+      setOrder(2);
+      setSource(src);
+      const rowVals = W2[src];
+      let maxV = -1, ans = -1;
+      for (let j = 0; j < N; j++) {
+        if (j === src) continue;
+        if (rowVals[j] > maxV) { maxV = rowVals[j]; ans = j; }
+      }
+      setChallenge({
+        kind, src, answer: ans,
+        prompt: `🏆 二阶热点：从 ${NAMES[src]} 出发，哪个街区在 W² 中拥有最多 2 步路径？（点地图作答）`,
+      });
+    } else if (kind === "onlyVia2") {
+      // 找一个 j，使 W¹[src,j] = 0 且 W²[src,j] > 0
+      setOrder(2);
+      setSource(src);
+      const cands: number[] = [];
+      for (let j = 0; j < N; j++) {
+        if (j === src) continue;
+        if (W1[src][j] === 0 && W2[src][j] > 0) cands.push(j);
+      }
+      if (cands.length === 0) {
+        // 换一个源
+        setTimeout(nextChallenge, 0);
+        return;
+      }
+      const ans = rngPick(cands);
+      setChallenge({
+        kind, src, answer: ans,
+        prompt: `🌉 桥接挑战：找一个街区——它<strong class="text-foreground">不是 ${NAMES[src]} 的直接邻居</strong>，但能在 <strong class="text-foreground">2 步内</strong>被影响。（点地图作答）`,
+      });
+    } else {
+      // countPaths：固定 src 与 tgt，问路径数
+      setOrder(2);
+      setSource(src);
+      // 找一个 W²[src,tgt] > 0 的 tgt
+      const cands: number[] = [];
+      for (let j = 0; j < N; j++) if (j !== src && W2[src][j] > 0) cands.push(j);
+      if (cands.length === 0) { setTimeout(nextChallenge, 0); return; }
+      const tgt = rngPick(cands);
+      const ans = W2[src][tgt];
+      // 4 个选项：包含正确答案，加几个干扰项
+      const optsSet = new Set<number>([ans]);
+      while (optsSet.size < 4) optsSet.add(Math.max(0, ans + Math.floor(Math.random() * 5) - 2));
+      const options = Array.from(optsSet).sort((a, b) => a - b);
+      setTarget(tgt);
+      setChallenge({
+        kind, src, tgt, answer: ans, options,
+        prompt: `🧮 路径计数：从 <strong class="text-foreground">${NAMES[src]}</strong> 到 <strong class="text-foreground">${NAMES[tgt]}</strong> 共有几条 2 步路径？`,
+      });
+    }
+  };
+
+  const submitAnswer = (val: number) => {
+    if (!challenge) return;
+    const ok = val === challenge.answer;
+    if (ok) {
+      const xp = 15 + streak * 5;
+      award(xp);
+      const newStreak = streak + 1;
+      setStreak(newStreak);
+      setSolved((s) => s + 1);
+      setFeedback({ ok: true, msg: `✅ 答对！+${xp} XP · 连胜 ${newStreak}` });
+      toast.success(`+${xp} XP · 连胜 ${newStreak}`);
+    } else {
+      setStreak(0);
+      const ansName = NAMES[challenge.answer] ?? challenge.answer;
+      setFeedback({
+        ok: false,
+        msg:
+          challenge.kind === "countPaths"
+            ? `❌ 正确答案是 ${challenge.answer} 条路径。`
+            : `❌ 正确答案是 ${ansName}。看看路径解释面板。`,
+      });
+      // 自动展示正确答案的路径
+      if (challenge.kind !== "countPaths") setTarget(challenge.answer);
+    }
+  };
+
+
+
   return (
     <div className="space-y-4">
       {/* 故事卡 */}
