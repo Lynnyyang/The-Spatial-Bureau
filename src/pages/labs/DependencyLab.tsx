@@ -23,9 +23,6 @@ import {
   Sparkles,
   Waves,
   Thermometer,
-  Home,
-  Activity,
-  ShieldAlert,
   Target,
   Zap,
   RotateCcw,
@@ -35,56 +32,18 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-// ============ 场景定义 ============
-type Scenario = {
-  id: string;
-  name: string;
-  icon: typeof Thermometer;
-  unit: string;
-  description: string;
-  hint: string;
+// ============ 统一场景：城市温度 ============
+const SCENARIO = {
+  name: "城市温度",
+  unit: "°C",
+  description:
+    "情境：盛夏午后，新域市气象局在 8×8 网格上采集了地表温度。热岛效应使工业区、商圈、密集建成区的温度向邻里街区扩散——这正是观察空间依赖性的绝佳样本。",
 };
-
-const SCENARIOS: Scenario[] = [
-  {
-    id: "temp",
-    name: "城市温度",
-    icon: Thermometer,
-    unit: "°C",
-    description: "夏季午后地表温度分布。热岛效应通常使相邻街区气温接近。",
-    hint: "工业区、商圈往往形成连片高温团块。",
-  },
-  {
-    id: "price",
-    name: "房屋均价",
-    icon: Home,
-    unit: "k/㎡",
-    description: "二手房成交均价。学区、地铁、商业配套呈空间外溢。",
-    hint: "高房价区与低房价区往往各自抱团。",
-  },
-  {
-    id: "epi",
-    name: "疫情病例",
-    icon: Activity,
-    unit: "例",
-    description: "传染病周新增病例数。社区接触是主要扩散路径。",
-    hint: "传染病通常沿邻里链式扩散，呈空间集聚。",
-  },
-  {
-    id: "crime",
-    name: "犯罪事件",
-    icon: ShieldAlert,
-    unit: "起",
-    description: "刑事案件月发案数。治安洼地具有空间惯性。",
-    hint: "犯罪热点常位于交界地带、形成片状黑区。",
-  },
-];
 
 // ============ 主组件 ============
 export default function DependencyLab() {
   const award = useAppStore((s) => s.awardXp);
   const W = useMemo(() => buildNeighbors({ rule: "queen" }), []);
-  const [scenario, setScenario] = useState<Scenario>(SCENARIOS[0]);
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-6">
@@ -95,38 +54,20 @@ export default function DependencyLab() {
             <Waves className="h-6 w-6 text-primary" /> 空间依赖性感知实验室
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            从感性认识开始：相邻区域为何不应被视为独立？通过四个真实场景与五项挑战，亲手"摸到"空间依赖。
+            围绕「城市温度」这一统一情境，通过 5 项递进挑战亲手"摸到"空间依赖。
           </p>
         </div>
       </header>
 
-      {/* 场景切换条 */}
-      <Card className="p-4 shadow-panel border-border/60">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-muted-foreground font-mono mr-2">当前场景：</span>
-          {SCENARIOS.map((s) => {
-            const Icon = s.icon;
-            const active = s.id === scenario.id;
-            return (
-              <button
-                key={s.id}
-                onClick={() => setScenario(s)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm border transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                    : "bg-background border-border hover:border-primary/50"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {s.name}
-              </button>
-            );
-          })}
+      {/* 情境卡片 */}
+      <Card className="p-4 shadow-panel border-border/60 flex items-start gap-3">
+        <div className="rounded-md bg-primary-soft p-2 flex-shrink-0">
+          <Thermometer className="h-5 w-5 text-primary" />
         </div>
-        <p className="text-xs text-muted-foreground mt-3 leading-relaxed">
-          <Sparkles className="h-3 w-3 inline mr-1 text-primary" />
-          {scenario.description}
-        </p>
+        <div>
+          <div className="text-sm font-semibold mb-1">案件情境 · {SCENARIO.name}（{SCENARIO.unit}）</div>
+          <p className="text-xs text-muted-foreground leading-relaxed">{SCENARIO.description}</p>
+        </div>
       </Card>
 
       <Tabs defaultValue="spot" className="w-full">
@@ -139,19 +80,19 @@ export default function DependencyLab() {
         </TabsList>
 
         <TabsContent value="spot" className="mt-4">
-          <SpotChallenge scenario={scenario} W={W} award={award} />
+          <SpotChallenge W={W} award={award} />
         </TabsContent>
         <TabsContent value="ripple" className="mt-4">
-          <RippleChallenge scenario={scenario} W={W} />
+          <RippleChallenge W={W} />
         </TabsContent>
         <TabsContent value="paint" className="mt-4">
-          <PaintChallenge scenario={scenario} W={W} award={award} />
+          <PaintChallenge W={W} award={award} />
         </TabsContent>
         <TabsContent value="blur" className="mt-4">
-          <BlurChallenge scenario={scenario} W={W} />
+          <BlurChallenge W={W} />
         </TabsContent>
         <TabsContent value="guess" className="mt-4">
-          <GuessChallenge scenario={scenario} W={W} award={award} />
+          <GuessChallenge W={W} award={award} />
         </TabsContent>
       </Tabs>
     </div>
