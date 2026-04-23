@@ -504,7 +504,6 @@ function HigherOrderLab() {
 
     if (kind === "max2") {
       // W² 中 W²[src,*] 取得最大值的所有 j 都是正确答案
-      setOrder(2);
       setSource(src);
       const rowVals = W2[src];
       let maxV = -1;
@@ -520,11 +519,10 @@ function HigherOrderLab() {
       if (answers.length === 0) { setTimeout(nextChallenge, 0); return; }
       setChallenge({
         kind, src, answers,
-        prompt: `🏆 二阶热点：从 ${NAMES[src]} 出发，哪个街区在 W² 中拥有最多 2 步路径？<span class="text-muted-foreground">（共 ${answers.length} 个正确答案，任选其一）</span>`,
+        prompt: `🏆 二阶热点：从 ${NAMES[src]} 出发，哪个街区在 W² 中拥有最多 2 步路径？<span class="text-muted-foreground">（共 ${answers.length} 个正确答案，任选其一；可手动切到第 2 天查看）</span>`,
       });
     } else if (kind === "onlyVia2") {
       // 所有满足 W¹[src,j] = 0 且 W²[src,j] > 0 的 j 都对
-      setOrder(2);
       setSource(src);
       const answers: number[] = [];
       for (let j = 0; j < N; j++) {
@@ -538,7 +536,6 @@ function HigherOrderLab() {
       });
     } else {
       // countPaths：固定 src 与 tgt，问路径数（唯一答案）
-      setOrder(2);
       setSource(src);
       const cands: number[] = [];
       for (let j = 0; j < N; j++) if (j !== src && W2[src][j] > 0) cands.push(j);
