@@ -816,7 +816,15 @@ type BugCase = {
   story: string;
   // 9x9 矩阵：W[i][j]，行 i = 当前区域，列 j = 邻居
   matrix: MatrixCell[][];
+  // 行级问题：rowIndex -> bugId（目前只用于 "rowsum"）
+  rowBugs?: Record<number, string>;
 };
+
+// 智能格式化数字：浮点累加误差 < 0.005 时四舍五入
+function smartSum(n: number): string {
+  if (Math.abs(n - Math.round(n)) < 0.005) return Math.round(n).toFixed(2);
+  return n.toFixed(2);
+}
 
 // 辅助：基于 Rook 真实邻接，生成"完美的行标准化矩阵"，再注入错误
 function buildPerfectMatrix(): MatrixCell[][] {
