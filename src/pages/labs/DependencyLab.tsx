@@ -319,7 +319,7 @@ function RippleChallenge({ W }: { W: number[][] }) {
 }
 
 // ============ 挑战 3：绘制聚集（目标 I）============
-function PaintChallenge({ scenario, W, award }: { scenario: Scenario; W: number[][]; award: (n: number) => void }) {
+function PaintChallenge({ W, award }: { W: number[][]; award: (n: number) => void }) {
   const [vals, setVals] = useState<number[]>(() => Array(TOTAL).fill(50));
   const [target] = useState(0.45);
   const [tolerance] = useState(0.05);
