@@ -860,12 +860,12 @@ const BUG_CASES: BugCase[] = (() => {
   m2[4][1] = { display: "0", bugId: "asym" };
   // 负值 bug：C 行 F 列（i=2,j=5）= -0.20
   m2[2][5] = { display: "-0.20", bugId: "neg" };
-  // 行和≠1 bug：H 行所有邻居权重不归一（H 邻居 E、G、I 各 0.5/0.3/0.3 = 1.1）
-  m2[7][4] = { display: "0.50", bugId: "rowsum" }; // 异常值标 rowsum
+  // 行和≠1：H 行（i=7）邻居 E/G/I 设成 0.5/0.3/0.3 = 1.1
+  m2[7][4] = { display: "0.50" };
   m2[7][6] = { display: "0.30" };
   m2[7][8] = { display: "0.30" };
 
-  // 案例 3：综合错误
+  // 案例 3：综合（自邻 + 假邻 + 漏邻 + 不对称）
   const m3 = buildPerfectMatrix();
   // 自邻：E (i=4,j=4)
   m3[4][4] = { display: "0.10", bugId: "self" };
@@ -873,7 +873,7 @@ const BUG_CASES: BugCase[] = (() => {
   m3[6][2] = { display: "0.40", bugId: "fake" };
   // 漏邻：F 行 E 列 (i=5,j=4) 应为邻居却为 0
   m3[5][4] = { display: "0", bugId: "miss" };
-  // 不对称：A→B=0.5 但 B→A 改为 0
+  // 不对称：B→A (i=1,j=0) 改为 0
   m3[1][0] = { display: "0", bugId: "asym" };
 
   return [
@@ -884,8 +884,9 @@ const BUG_CASES: BugCase[] = (() => {
     },
     {
       title: "案例 2 · 对称性 + 行标准化",
-      story: "这次的 W 矩阵藏着不对称、负值、行和不为 1 三种问题。",
+      story: "这次的 W 矩阵藏着不对称、负值、行和不为 1 三种问题。注意：行和问题要点击行标签 (A-I) 来标记！",
       matrix: m2,
+      rowBugs: { 7: "rowsum" }, // H 行：0.5 + 0.3 + 0.3 = 1.1
     },
     {
       title: "案例 3 · 综合排查",
