@@ -372,394 +372,349 @@ function InfluenceMixer() {
   );
 }
 
-// ============ 玩法二：嘉年华人流疏导 🎪 ============
-// 故事：你是嘉年华的入口指挥官，每条道路通往一个邻居场地（餐厅/停车场/酒店等），
-// 每个场地有不同的"接待容量"。你为每条道路设置权重（拖滑杆），
-// 入口的人流会按权重比例流向各场地。超过容量的场地会变红警告！
-// 交互：① 拖滑杆调权重 ② 点场地卡片看详情 ③ 切换 Rook/Queen 邻接看连接变化
-// ④ 一键最优分配 ⑤ 实时人流动画 ⑥ 多轮关卡 ⑦ 行标准化矩阵实时显示
-function DeliveryAllocator() {
+// ============ 玩法二：房价涟漪效应 🏘️ ============
+// 故事：城市由 5×5 = 25 个学区房组成。点击其中一个学区作为"震源"，
+// 它的房价上涨会按 1/d^p 的距离衰减规律影响周边邻居。
+// 核心目标：让玩家直观看到"地图上的空间关系"如何对应到"权重矩阵的行/列"。
+// 交互：① 点地图选震源 → 高亮 W 矩阵的对应行 ② 悬停地图格 ↔ 悬停矩阵格双向联动
+// ③ 拖动半径 r、衰减 p → 实时观察矩阵稀疏度变化 ④ 切换行标准化
+function HousingRipple() {
   const award = useAppStore((s) => s.awardXp);
-  const [round, setRound] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
-  const [score, setScore] = useState(0);
-  const [rule, setRule] = useState<"rook" | "queen">("queen");
-  const [pickedIdx, setPickedIdx] = useState<number | null>(null);
 
-  const center = 27; // 入口固定在中心
+  // ---- 地图配置：5×5 ----
+  const SIZE = 5;
+  const N = SIZE * SIZE; // 25
 
-  // 关卡：每关人流量 + 各场地容量配置（按方向：N, NE, E, SE, S, SW, W, NW）
-  const ROUNDS = [
-    {
-      title: "周五傍晚 · 中等人流",
-      crowd: 600,
-      capacities: [200, 80, 150, 60, 220, 70, 180, 90],
-      icons: ["🍔", "🅿️", "🎡", "🎪", "🏨", "🎭", "🍜", "🎠"],
-      names: ["美食街", "停车场A", "摩天轮", "马戏帐篷", "大酒店", "剧场", "面馆", "旋转木马"],
-    },
-    {
-      title: "周六中午 · 大客流来袭",
-      crowd: 1200,
-      capacities: [350, 120, 280, 100, 400, 150, 320, 130],
-      icons: ["🍔", "🅿️", "🎡", "🎪", "🏨", "🎭", "🍜", "🎠"],
-      names: ["美食街", "停车场A", "摩天轮", "马戏帐篷", "大酒店", "剧场", "面馆", "旋转木马"],
-    },
-    {
-      title: "节日烟花夜 · 极限调度",
-      crowd: 2000,
-      capacities: [500, 180, 600, 150, 700, 200, 480, 220],
-      icons: ["🍔", "🅿️", "🎡", "🎪", "🏨", "🎭", "🍜", "🎠"],
-      names: ["美食街", "停车场A", "摩天轮", "马戏帐篷", "大酒店", "剧场", "面馆", "旋转木马"],
-    },
-  ];
-  const cur = ROUNDS[round % ROUNDS.length];
+  // 状态
+  const [source, setSource] = useState(12); // 中心 (2,2)
+  const [hover, setHover] = useState<number | null>(null);
+  const [radius, setRadius] = useState([2.5]);
+  const [decay, setDecay] = useState([2.0]);
+  const [rowStd, setRowStd] = useState(true);
+  const [explored, setExplored] = useState<Set<number>>(new Set([12]));
 
-  // 8 个方向偏移（Queen 邻接顺序：N, NE, E, SE, S, SW, W, NW）
-  const ALL_DIRS = [
-    { label: "北 ↑", offset: -GRID_SIZE, isDiag: false },
-    { label: "东北 ↗", offset: -GRID_SIZE + 1, isDiag: true },
-    { label: "东 →", offset: 1, isDiag: false },
-    { label: "东南 ↘", offset: GRID_SIZE + 1, isDiag: true },
-    { label: "南 ↓", offset: GRID_SIZE, isDiag: false },
-    { label: "西南 ↙", offset: GRID_SIZE - 1, isDiag: true },
-    { label: "西 ←", offset: -1, isDiag: false },
-    { label: "西北 ↖", offset: -GRID_SIZE - 1, isDiag: true },
+  // 区名（生动一点）
+  const DISTRICT_NAMES = [
+    "海湾","江畔","山景","湖心","云端",
+    "梧桐","樱花","紫藤","枫林","桂园",
+    "金阙","玉壶","锦绣","翠微","玲珑",
+    "学府","书香","墨韵","笔耕","翰林",
+    "晨曦","暮霭","星辰","月华","流光",
   ];
 
-  // 根据规则筛选活动方向
-  const activeIdxs = ALL_DIRS.map((_, i) => i).filter((i) =>
-    rule === "queen" ? true : !ALL_DIRS[i].isDiag
-  );
-  const N = activeIdxs.length; // rook=4, queen=8
+  // 计算 W 矩阵（25×25）
+  const W = useMemo(() => {
+    const r = radius[0], p = decay[0];
+    const M: number[][] = Array.from({ length: N }, () => Array(N).fill(0));
+    for (let i = 0; i < N; i++) {
+      const ri = Math.floor(i / SIZE), ci = i % SIZE;
+      for (let j = 0; j < N; j++) {
+        if (i === j) continue;
+        const rj = Math.floor(j / SIZE), cj = j % SIZE;
+        const d = Math.hypot(ri - rj, ci - cj);
+        if (d > r) continue;
+        M[i][j] = 1 / Math.pow(d, p);
+      }
+    }
+    if (rowStd) {
+      for (let i = 0; i < N; i++) {
+        const s = M[i].reduce((a, b) => a + b, 0);
+        if (s > 0) for (let j = 0; j < N; j++) M[i][j] /= s;
+      }
+    }
+    return M;
+  }, [radius, decay, rowStd]);
 
-  // 玩家权重（每个活动方向 0-10，平均初始）
-  const [weights, setWeights] = useState<number[]>(() => Array(8).fill(5));
+  // 当前震源那一行
+  const row = W[source];
+  const maxW = Math.max(...row, 1e-9);
+  const neighborCount = row.filter((v) => v > 0).length;
+  const sumWeights = row.reduce((a, b) => a + b, 0);
 
-  // 切换规则时重置权重
-  const onRuleChange = (r: "rook" | "queen") => {
-    setRule(r);
-    setWeights(Array(8).fill(5));
-    setSubmitted(false);
-    setPickedIdx(null);
-  };
-
-  const updateWeight = (idx: number, v: number) => {
-    setWeights((prev) => {
-      const next = [...prev];
-      next[idx] = v;
+  // 探索奖励：第一次震中超过 5 个不同区域 +20 XP
+  const onPickSource = (i: number) => {
+    setSource(i);
+    setExplored((prev) => {
+      if (prev.has(i)) return prev;
+      const next = new Set(prev);
+      next.add(i);
+      if (prev.size === 4) {
+        award(20);
+        toast.success("🎉 探索 5 个不同震源 +20 XP");
+      } else if (prev.size === 9) {
+        award(30);
+        toast.success("🏆 探索 10 个不同震源 +30 XP");
+      }
       return next;
     });
   };
 
-  // 行标准化：只在活动方向中归一化
-  const sumActive = activeIdxs.reduce((a, i) => a + weights[i], 0) || 1;
-  const normalized = ALL_DIRS.map((_, i) =>
-    activeIdxs.includes(i) ? weights[i] / sumActive : 0
-  );
-
-  // 实际流入各场地的人数
-  const flow = normalized.map((w) => Math.round(w * cur.crowd));
-
-  // 超载场地数
-  const overloaded = activeIdxs.filter((i) => flow[i] > cur.capacities[i]);
-  const overloadCount = overloaded.length;
-
-  // 利用率（接近 1 是好事，>1 = 超载）
-  const utilization = activeIdxs.map((i) => flow[i] / cur.capacities[i]);
-  const avgUtil =
-    utilization.reduce((a, b) => a + b, 0) / utilization.length;
-
-  // 一键最优：按容量比例分配
-  const autoOptimize = () => {
-    const totalCap = activeIdxs.reduce((a, i) => a + cur.capacities[i], 0);
-    const next = [...weights];
-    activeIdxs.forEach((i) => {
-      next[i] = Math.round((cur.capacities[i] / totalCap) * 50);
-    });
-    // 非活动方向清零
-    ALL_DIRS.forEach((_, i) => {
-      if (!activeIdxs.includes(i)) next[i] = 0;
-    });
-    setWeights(next);
-    toast.message("已套用容量比例最优方案 ✨", {
-      description: "权重 ∝ 场地容量，让每个场地利用率接近 100%。",
-    });
+  // 颜色：基于权重强度（橙色系）
+  const cellShade = (w: number) => {
+    if (w <= 0) return "hsl(var(--muted) / 0.3)";
+    const t = Math.min(1, w / maxW);
+    // 从淡橙到深橙
+    const lightness = 92 - t * 50;
+    return `hsl(24 95% ${lightness}%)`;
   };
-
-  const reset = () => {
-    setWeights(Array(8).fill(5));
-    setSubmitted(false);
-    setPickedIdx(null);
-  };
-
-  // 点击场地卡片：显示详细分析
-  const showDetail = (idx: number) => {
-    setPickedIdx(idx);
-    const cap = cur.capacities[idx];
-    const flo = flow[idx];
-    const w = (normalized[idx] * 100).toFixed(1);
-    const status = flo > cap ? `⚠️ 超载 ${flo - cap} 人！` : `✅ 还可接 ${cap - flo} 人`;
-    toast.message(`${cur.icons[idx]} ${cur.names[idx]}`, {
-      description: `权重 ${w}% → 流入 ${flo} 人 / 容量 ${cap} 人 · ${status}`,
-    });
-  };
-
-  const submit = () => {
-    setSubmitted(true);
-    // 评分：超载越少越好，平均利用率越接近 0.85 越好
-    const overloadPenalty = overloadCount * 15;
-    const utilScore = Math.max(0, 50 - Math.abs(avgUtil - 0.85) * 100);
-    const pts = Math.max(5, Math.round(utilScore + 30 - overloadPenalty));
-    setScore((s) => s + pts);
-    award(pts);
-    if (overloadCount === 0 && avgUtil > 0.7) {
-      toast.success(`🎉 完美调度！+${pts} XP · 零超载，平均利用率 ${(avgUtil * 100).toFixed(0)}%`);
-    } else if (overloadCount === 0) {
-      toast.message(`+${pts} XP · 没有超载，但部分场地利用率低`);
-    } else {
-      toast.error(`+${pts} XP · ${overloadCount} 个场地超载！`);
-    }
-  };
-
-  const nextRound = () => {
-    setRound((r) => r + 1);
-    setSubmitted(false);
-    setWeights(Array(8).fill(5));
-    setPickedIdx(null);
-  };
-
-  // 地图：中心紫色，邻居按"流入人数 / 容量 比例"上色（utilization）
-  const neighbors = activeIdxs.map((i) => center + ALL_DIRS[i].offset);
-  const mapValues = useMemo(() => {
-    const out = new Array(TOTAL).fill(0);
-    activeIdxs.forEach((i) => {
-      const cellId = center + ALL_DIRS[i].offset;
-      // 把利用率映射到 0-100 颜色（>100 表示超载，截到 100 但用 colorOf 标红）
-      const u = flow[i] / cur.capacities[i];
-      out[cellId] = Math.min(100, Math.round(u * 80));
-    });
-    out[center] = 100;
-    return out;
-  }, [activeIdxs, flow, cur.capacities, center]);
-
-  const colorOf = (i: number) => {
-    if (i === center) return "hsl(var(--primary))";
-    const dirIdx = activeIdxs.find((di) => center + ALL_DIRS[di].offset === i);
-    if (dirIdx === undefined) return "hsl(var(--muted))";
-    const u = flow[dirIdx] / cur.capacities[dirIdx];
-    if (u > 1) return "hsl(var(--destructive))"; // 超载红
-    if (u > 0.85) return "hsl(var(--success))"; // 接近满 绿
-    if (u > 0.4) return "hsl(var(--warning))"; // 中等 黄
-    return "";
-  };
-
-  // 中心到邻居的连线（人流通道）
-  const edges: Array<[number, number]> = neighbors.map((j) => [center, j]);
 
   return (
-    <Card className="p-6 shadow-panel border-border/60">
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <div>
-          <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">
-            第 {round + 1} 轮 · 嘉年华人流疏导 🎪
+    <div className="space-y-4">
+      {/* 故事卡 */}
+      <Card className="p-4 shadow-panel border-border/60 bg-gradient-to-br from-orange-50/50 to-transparent dark:from-orange-950/20">
+        <div className="flex items-start gap-3">
+          <div className="text-3xl">🏘️</div>
+          <div className="flex-1">
+            <div className="font-semibold text-sm mb-1">房价涟漪效应：地图 ↔ 矩阵 双向对应</div>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              这个城市有 25 个学区。<strong className="text-foreground">点击地图上任意一个学区</strong>作为"房价震源"——
+              它的房价上涨会按 <span className="font-mono text-primary">1/d^p</span> 衰减扩散到邻居。
+              观察：地图上的颜色深浅 = 权重矩阵 W 中"震源那一行"的对应单元格。
+            </p>
           </div>
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Truck className="h-5 w-5 text-primary" /> {cur.title}
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            🎟️ 入口涌入 <strong className="text-primary">{cur.crowd} 人</strong>
-            ，为每条道路设权重，让人流按比例分配到 {N} 个场地。别让场地超载！
-          </p>
+          <Badge variant="outline" className="font-mono text-[10px]">
+            已探索 {explored.size}/25
+          </Badge>
         </div>
-        <Badge variant="secondary">累计 {score} XP</Badge>
-      </div>
+      </Card>
 
-      {/* 规则切换 */}
-      <div className="flex gap-2 mb-4 flex-wrap items-center">
-        <span className="text-xs text-muted-foreground">邻接规则：</span>
-        <Button
-          size="sm"
-          variant={rule === "rook" ? "default" : "outline"}
-          onClick={() => onRuleChange("rook")}
-        >
-          ♜ Rook · 4 个方向
-        </Button>
-        <Button
-          size="sm"
-          variant={rule === "queen" ? "default" : "outline"}
-          onClick={() => onRuleChange("queen")}
-        >
-          ♛ Queen · 8 个方向
-        </Button>
-        <span className="text-[11px] text-muted-foreground italic ml-2">
-          切换会重置权重，看看不同邻接方式如何影响调度难度。
-        </span>
-      </div>
-
-      <div className="grid lg:grid-cols-[1fr_440px] gap-6 items-start">
+      <div className="grid lg:grid-cols-[420px_1fr] gap-4">
+        {/* ===== 左：地图 ===== */}
         <div className="space-y-3">
-          <GridCity
-            values={mapValues}
-            size={500}
-            selected={center}
-            highlight={[center, ...neighbors]}
-            colorOf={colorOf}
-            edges={edges}
-            showLabels={false}
-          />
-          <div className="grid grid-cols-2 gap-2 text-[11px]">
-            <div className="rounded-md border border-border p-2 bg-background">
-              <div className="text-muted-foreground">📊 平均利用率</div>
-              <div className={`text-lg font-bold font-mono ${avgUtil > 0.7 && avgUtil < 1 ? "text-success" : avgUtil >= 1 ? "text-destructive" : "text-warning"}`}>
-                {(avgUtil * 100).toFixed(0)}%
-              </div>
+          <Card className="p-4 shadow-panel border-border/60">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-mono text-muted-foreground">城市地图 (5×5)</div>
+              <Badge className="bg-orange-600 hover:bg-orange-600 text-white font-mono text-[10px]">
+                震源 #{source} · {DISTRICT_NAMES[source]}
+              </Badge>
             </div>
-            <div className="rounded-md border border-border p-2 bg-background">
-              <div className="text-muted-foreground">⚠️ 超载场地</div>
-              <div className={`text-lg font-bold font-mono ${overloadCount === 0 ? "text-success" : "text-destructive"}`}>
-                {overloadCount} / {N}
-              </div>
-            </div>
-          </div>
-          <div className="flex gap-3 text-[10px] text-muted-foreground flex-wrap">
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-primary" />入口
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-success" />利用佳
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-warning" />空闲
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded bg-destructive" />超载
-            </span>
-          </div>
-        </div>
 
-        <div className="space-y-3">
-          {/* 场地卡片网格 */}
-          <div className="text-xs text-muted-foreground">
-            🖱️ 拖动滑杆设置权重 · 点击场地图标查看详情
-          </div>
-          <div className="grid grid-cols-2 gap-2 max-h-[420px] overflow-y-auto pr-1">
-            {activeIdxs.map((i) => {
-              const cap = cur.capacities[i];
-              const flo = flow[i];
-              const u = flo / cap;
-              const isOver = flo > cap;
-              const isPicked = pickedIdx === i;
-              const cardCls = isOver
-                ? "border-destructive bg-destructive/5"
-                : u > 0.85
-                ? "border-success bg-success/5"
-                : isPicked
-                ? "border-primary bg-primary-soft"
-                : "border-border bg-background hover:border-primary/50";
-              return (
-                <div
-                  key={i}
-                  className={`rounded-lg border-2 p-2.5 transition-all ${cardCls}`}
-                >
+            <div className="grid grid-cols-5 gap-1.5 aspect-square">
+              {Array.from({ length: N }).map((_, i) => {
+                const isSource = i === source;
+                const w = row[i];
+                const isHover = hover === i;
+                const isMatrixHoverPair = hover !== null && hover === i;
+                return (
                   <button
-                    type="button"
-                    onClick={() => showDetail(i)}
-                    className="w-full text-left mb-1.5 group"
+                    key={i}
+                    onMouseEnter={() => setHover(i)}
+                    onMouseLeave={() => setHover(null)}
+                    onClick={() => onPickSource(i)}
+                    className={`relative rounded-md border-2 flex flex-col items-center justify-center transition-all duration-200 ${
+                      isSource
+                        ? "border-orange-600 ring-2 ring-orange-300 scale-105 z-10 shadow-lg"
+                        : isHover
+                        ? "border-primary scale-105 z-10"
+                        : "border-border/50 hover:border-primary/50"
+                    }`}
+                    style={{
+                      backgroundColor: isSource ? "hsl(24 95% 55%)" : cellShade(w),
+                    }}
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] font-mono text-muted-foreground">
-                        {ALL_DIRS[i].label}
-                      </span>
-                      {isOver && (
-                        <Badge variant="destructive" className="h-4 px-1 text-[9px]">
-                          超载
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xl">{cur.icons[i]}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[10px] truncate font-medium">{cur.names[i]}</div>
-                        <div className="text-[10px] font-mono text-muted-foreground">
-                          容量 {cap}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                  {/* 流入条 */}
-                  <div className="h-1.5 bg-muted rounded-full overflow-hidden mb-1">
-                    <div
-                      className={`h-full transition-all ${
-                        isOver ? "bg-destructive" : u > 0.85 ? "bg-success" : "bg-primary"
+                    <span
+                      className={`text-[9px] font-mono ${
+                        isSource ? "text-white font-bold" : w > maxW * 0.4 ? "text-orange-900" : "text-muted-foreground"
                       }`}
-                      style={{ width: `${Math.min(100, u * 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-[10px] font-mono mb-1">
-                    <span className={isOver ? "text-destructive font-bold" : "text-foreground"}>
-                      {flo} 人
+                    >
+                      {DISTRICT_NAMES[i]}
                     </span>
-                    <span className="text-primary font-bold">
-                      w={normalized[i].toFixed(2)}
-                    </span>
-                  </div>
-                  <Slider
-                    min={0}
-                    max={10}
-                    step={1}
-                    value={[weights[i]]}
-                    onValueChange={(v) => updateWeight(i, v[0])}
-                    disabled={submitted}
-                  />
+                    {(isSource || w > 0) && (
+                      <span
+                        className={`text-[10px] font-mono font-bold ${
+                          isSource ? "text-white" : "text-orange-900/80"
+                        }`}
+                      >
+                        {isSource ? "震源" : w.toFixed(rowStd ? 2 : 2)}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
+              <div className="rounded bg-muted/40 p-2">
+                <div className="text-muted-foreground">受影响</div>
+                <div className="font-mono font-bold text-orange-600">{neighborCount} 个</div>
+              </div>
+              <div className="rounded bg-muted/40 p-2">
+                <div className="text-muted-foreground">权重总和</div>
+                <div className="font-mono font-bold text-orange-600">{sumWeights.toFixed(2)}</div>
+              </div>
+              <div className="rounded bg-muted/40 p-2">
+                <div className="text-muted-foreground">最大权重</div>
+                <div className="font-mono font-bold text-orange-600">{maxW.toFixed(2)}</div>
+              </div>
+            </div>
+          </Card>
+
+          {/* 调音台 */}
+          <Card className="p-4 shadow-panel border-border/60 space-y-4">
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">影响半径 r</span>
+                <span className="font-mono text-sm font-semibold text-primary">{radius[0].toFixed(1)} 格</span>
+              </div>
+              <Slider min={1} max={5} step={0.5} value={radius} onValueChange={setRadius} />
+              <p className="text-[11px] text-muted-foreground mt-1">超过 r 的距离权重直接 = 0（截断带宽）。</p>
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm">距离衰减幂 p</span>
+                <span className="font-mono text-sm font-semibold text-primary">{decay[0].toFixed(1)}</span>
+              </div>
+              <Slider min={0.5} max={4} step={0.1} value={decay} onValueChange={setDecay} />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                <span className="font-mono">w = 1/d^p</span>。p 越大，远处衰减越快。
+              </p>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded bg-muted/40">
+              <div>
+                <div className="text-sm">行标准化</div>
+                <p className="text-[10px] text-muted-foreground">让每行权重和 = 1（除对角）</p>
+              </div>
+              <Button
+                size="sm"
+                variant={rowStd ? "default" : "outline"}
+                onClick={() => setRowStd(!rowStd)}
+              >
+                {rowStd ? "✓ 已开启" : "未开启"}
+              </Button>
+            </div>
+          </Card>
+        </div>
+
+        {/* ===== 右：矩阵视图 ===== */}
+        <div className="space-y-3">
+          {/* 当前行的权重条 */}
+          <Card className="p-4 shadow-panel border-border/60">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-mono text-muted-foreground">
+                W[{source}, *] · 震源「{DISTRICT_NAMES[source]}」对所有邻居的权重
+              </div>
+              <Badge variant="outline" className="font-mono text-[10px]">
+                这就是矩阵的第 {source} 行
+              </Badge>
+            </div>
+            <div className="space-y-1 max-h-[200px] overflow-y-auto pr-1">
+              {row
+                .map((w, j) => ({ w, j }))
+                .filter((x) => x.w > 0)
+                .sort((a, b) => b.w - a.w)
+                .slice(0, 10)
+                .map(({ w, j }) => {
+                  const ri = Math.floor(source / SIZE), ci = source % SIZE;
+                  const rj = Math.floor(j / SIZE), cj = j % SIZE;
+                  const d = Math.hypot(ri - rj, ci - cj);
+                  const isHover = hover === j;
+                  return (
+                    <div
+                      key={j}
+                      onMouseEnter={() => setHover(j)}
+                      onMouseLeave={() => setHover(null)}
+                      className={`flex items-center gap-2 p-1.5 rounded text-[11px] cursor-pointer transition-colors ${
+                        isHover ? "bg-primary/10 ring-1 ring-primary" : "hover:bg-muted/40"
+                      }`}
+                    >
+                      <span className="font-mono w-20 text-muted-foreground">
+                        W[{source},{j}]
+                      </span>
+                      <span className="font-medium w-16 truncate">{DISTRICT_NAMES[j]}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground w-14">
+                        d={d.toFixed(2)}
+                      </span>
+                      <div className="flex-1 h-2 bg-muted/40 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-orange-500 transition-all"
+                          style={{ width: `${(w / maxW) * 100}%` }}
+                        />
+                      </div>
+                      <span className="font-mono font-bold text-orange-600 w-12 text-right">
+                        {w.toFixed(3)}
+                      </span>
+                    </div>
+                  );
+                })}
+              {neighborCount === 0 && (
+                <div className="text-center py-6 text-xs text-muted-foreground">
+                  半径太小，没有邻居被影响。试着调大 r。
                 </div>
-              );
-            })}
-          </div>
-
-          {/* 操作按钮 */}
-          <div className="grid grid-cols-3 gap-2">
-            <Button variant="ghost" size="sm" onClick={reset}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1" /> 重置
-            </Button>
-            <Button variant="outline" size="sm" onClick={autoOptimize}>
-              <Sparkles className="h-3.5 w-3.5 mr-1" /> 智能分配
-            </Button>
-            {!submitted ? (
-              <Button onClick={submit} size="sm">
-                <Target className="h-3.5 w-3.5 mr-1" /> 开闸放行
-              </Button>
-            ) : (
-              <Button onClick={nextRound} size="sm">
-                下一轮 →
-              </Button>
-            )}
-          </div>
-
-          {/* 行标准化矩阵实时显示 */}
-          <div className="rounded-md border border-border bg-muted/30 p-2.5">
-            <div className="text-[10px] text-muted-foreground mb-1.5 flex items-center justify-between">
-              <span>📐 当前行标准化权重 W[入口, *]</span>
-              <span className="font-mono">Σw = {normalized.reduce((a, b) => a + b, 0).toFixed(2)}</span>
+              )}
             </div>
-            <div className="flex flex-wrap gap-1">
-              {activeIdxs.map((i) => (
-                <span
-                  key={i}
-                  className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-background border border-border"
-                >
-                  {cur.icons[i]} {normalized[i].toFixed(2)}
-                </span>
-              ))}
-            </div>
-          </div>
+          </Card>
 
-          <div className="rounded-md bg-primary-soft p-2.5 text-[11px] text-primary leading-relaxed">
-            🎯 <strong>这就是行标准化的空间权重矩阵 W！</strong>
-            wᵢⱼ = 你给道路 j 的原始权重 ÷ 所有道路权重之和。规则不同（Rook/Queen），矩阵的非零元数也不同。
-          </div>
+          {/* 25×25 全矩阵热图 */}
+          <Card className="p-4 shadow-panel border-border/60">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-mono text-muted-foreground">
+                完整 W 矩阵 (25×25) · 第 {source} 行高亮
+              </div>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <div className="size-2 rounded-sm bg-orange-500" /> 高权重
+                <div className="size-2 rounded-sm bg-orange-200" /> 低权重
+                <div className="size-2 rounded-sm bg-muted" /> 0
+              </div>
+            </div>
+            <div className="aspect-square w-full max-w-[420px] mx-auto">
+              <svg viewBox="0 0 250 250" className="w-full h-auto border border-border rounded">
+                {W.map((rowVals, i) =>
+                  rowVals.map((v, j) => {
+                    const isSrcRow = i === source;
+                    const isSrcCol = j === source;
+                    const isHoverCell = hover !== null && (i === source && j === hover);
+                    let fill = "hsl(var(--muted) / 0.3)";
+                    if (v > 0) {
+                      const t = Math.min(1, v / maxW);
+                      fill = `hsl(24 95% ${92 - t * 55}%)`;
+                    }
+                    if (i === j) fill = "hsl(var(--border))";
+                    return (
+                      <rect
+                        key={`${i}-${j}`}
+                        x={j * 10}
+                        y={i * 10}
+                        width={9.5}
+                        height={9.5}
+                        fill={fill}
+                        stroke={
+                          isHoverCell
+                            ? "hsl(var(--primary))"
+                            : isSrcRow || isSrcCol
+                            ? "hsl(24 95% 55% / 0.4)"
+                            : "none"
+                        }
+                        strokeWidth={isHoverCell ? 1.5 : isSrcRow || isSrcCol ? 0.5 : 0}
+                        onMouseEnter={() => i === source && setHover(j)}
+                        onMouseLeave={() => setHover(null)}
+                        style={{ cursor: i === source ? "pointer" : "default" }}
+                      >
+                        <title>{`W[${i}][${j}] = ${v.toFixed(3)}`}</title>
+                      </rect>
+                    );
+                  })
+                )}
+                {/* 高亮震源行 */}
+                <rect
+                  x={0}
+                  y={source * 10}
+                  width={250}
+                  height={10}
+                  fill="none"
+                  stroke="hsl(24 95% 55%)"
+                  strokeWidth={1.2}
+                />
+              </svg>
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-2 text-center leading-relaxed">
+              💡 第 <span className="font-mono text-orange-600">{source}</span> 行的橙色单元格 ↔ 地图上同样颜色的格子。
+              <br />
+              改变震源、半径或衰减幂，矩阵的稀疏度与热度会同步变化。
+            </p>
+          </Card>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
 
