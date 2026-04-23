@@ -593,7 +593,7 @@ function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
           <div className="text-xs text-muted-foreground font-mono tracking-wider mb-1">挑战 5 / 5 · 实战推理</div>
           <h2 className="text-lg font-semibold">缺失值预测：邻居能告诉你多少？</h2>
           <p className="text-xs text-muted-foreground mt-1">
-            高亮区域的温度数值被遮挡。利用周围邻居信息，估计它的数值。这就是"地理学第一定律"的实战。
+            灰色高亮格子的温度值被遮挡。利用周围邻居的温度，估计它的数值。这就是"地理学第一定律"的实战。
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -601,7 +601,17 @@ function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
         </div>
       </div>
 
-      <div className="grid md:grid-cols-[1fr_300px] gap-6 items-start">
+      {/* 玩法说明 */}
+      <div className="mb-4 rounded-md bg-primary-soft border border-primary/20 p-3 text-xs text-primary leading-relaxed">
+        <div className="font-semibold mb-1.5">📖 怎么猜？三步走：</div>
+        <ol className="list-decimal list-inside space-y-1 ml-1">
+          <li>看地图上<strong>灰色目标格</strong>周围那些高亮的邻居颜色——颜色越红越热，越蓝越冷。</li>
+          <li>参考右侧<strong>每个邻居的具体温度</strong>，目标值通常落在邻居的<strong>最小值～最大值之间</strong>，且接近<strong>邻居均值</strong>。</li>
+          <li>拖动滑杆给出估计，或直接点"采纳邻居均值"作为基线策略。误差越小得分越高。</li>
+        </ol>
+      </div>
+
+      <div className="grid md:grid-cols-[1fr_320px] gap-6 items-start">
         <GridCity
           values={vals}
           size={460}
@@ -615,18 +625,34 @@ function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
 
         <div className="space-y-4 text-sm">
           <div className="rounded-md border border-border p-3 bg-background">
-            <div className="text-xs text-muted-foreground mb-2">参考信息</div>
-            <div className="space-y-1.5 text-xs font-mono">
+            <div className="text-xs text-muted-foreground mb-2 flex items-center justify-between">
+              <span>邻居信息</span>
+              <span className="font-mono">{neighbors.length} 个邻居</span>
+            </div>
+            <div className="flex flex-wrap gap-1 mb-3">
+              {neighborVals
+                .slice()
+                .sort((a, b) => a - b)
+                .map((v, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center justify-center min-w-[2.2rem] px-1.5 py-0.5 rounded text-[11px] font-mono font-semibold border border-border bg-muted/40"
+                  >
+                    {v}
+                  </span>
+                ))}
+            </div>
+            <div className="space-y-1.5 text-xs font-mono border-t border-border pt-2">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">邻居数量</span>
-                <span className="font-semibold">{neighbors.length}</span>
+                <span className="text-muted-foreground">邻居范围</span>
+                <span className="font-semibold">{neighborMin} ~ {neighborMax}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">邻居均值</span>
+                <span className="text-muted-foreground">邻居均值（推荐）</span>
                 <span className="font-semibold text-primary">{neighborMean.toFixed(1)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">全局均值</span>
+                <span className="text-muted-foreground">全局均值（参照）</span>
                 <span className="font-semibold">{globalMean.toFixed(1)}</span>
               </div>
             </div>
@@ -640,15 +666,42 @@ function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
                   <span className="text-2xl font-bold font-mono text-primary">{guess ?? "—"}</span>
                 </div>
                 <Slider value={[guess ?? 50]} onValueChange={(v) => setGuess(v[0])} min={0} max={100} step={1} />
+                {/* 参考标记线 */}
+                <div className="relative h-5 mt-1">
+                  <div
+                    className="absolute -translate-x-1/2 flex flex-col items-center"
+                    style={{ left: `${neighborMean}%` }}
+                  >
+                    <div className="w-px h-2 bg-primary" />
+                    <span className="text-[9px] text-primary font-mono whitespace-nowrap">邻居均值</span>
+                  </div>
+                  <div
+                    className="absolute -translate-x-1/2 flex flex-col items-center"
+                    style={{ left: `${globalMean}%` }}
+                  >
+                    <div className="w-px h-2 bg-muted-foreground" />
+                    <span className="text-[9px] text-muted-foreground font-mono whitespace-nowrap">全局</span>
+                  </div>
+                </div>
                 <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-                  <span>0</span>
+                  <span>0 冷</span>
                   <span>50</span>
-                  <span>100</span>
+                  <span>100 热</span>
                 </div>
               </div>
-              <Button onClick={submit} disabled={guess === null} className="w-full">
-                <Target className="h-3.5 w-3.5 mr-1" /> 提交估计
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setGuess(Math.round(neighborMean))}
+                  className="text-xs"
+                >
+                  采纳邻居均值
+                </Button>
+                <Button onClick={submit} disabled={guess === null} size="sm">
+                  <Target className="h-3.5 w-3.5 mr-1" /> 提交
+                </Button>
+              </div>
             </>
           ) : (
             <>
@@ -681,8 +734,8 @@ function GuessChallenge({ W, award }: { W: number[][]; award: (n: number) => voi
             </>
           )}
 
-          <div className="rounded-md bg-primary-soft p-3 text-xs leading-relaxed text-primary">
-            🌍 <strong>Tobler 第一定律：</strong>"凡事都与其他事物相关，但近的事物比远的事物更相关。"
+          <div className="rounded-md bg-muted/40 border border-border p-3 text-xs leading-relaxed text-muted-foreground">
+            🌍 <strong className="text-foreground">Tobler 第一定律：</strong>"凡事都与其他事物相关，但近的事物比远的事物更相关。" 邻居均值通常优于全局均值——这正是空间依赖性的力量。
           </div>
         </div>
       </div>
