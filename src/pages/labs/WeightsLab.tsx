@@ -299,21 +299,32 @@ function InfluenceMixer() {
               </span>
             </div>
           </div>
-          {passed ? (
-            <div className="mt-2 flex gap-2">
-              {levelIdx < LEVELS.length - 1 ? (
-                <Button size="sm" onClick={goNext} className="flex-1">
-                  进入下一关 →
+          <div className="mt-3 space-y-2">
+            {cleared[levelIdx] ? (
+              levelIdx < LEVELS.length - 1 ? (
+                <Button size="sm" onClick={goNext} className="w-full">
+                  ✓ 已通关 · 进入下一关 →
                 </Button>
               ) : (
                 <Badge variant="secondary" className="w-full justify-center py-1.5">
                   🏆 全部关卡通关！
                 </Badge>
-              )}
-            </div>
-          ) : (
-            <div className="mt-2 text-[11px] text-muted-foreground italic">💡 {level.hint}</div>
-          )}
+              )
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  onClick={submit}
+                  className="w-full"
+                  variant={passed ? "default" : "outline"}
+                >
+                  <Target className="h-3.5 w-3.5 mr-1" />
+                  {passed ? "提交方案 · 完美达成！" : `提交方案${attempts > 0 ? ` · 第 ${attempts + 1} 次` : ""}`}
+                </Button>
+                <div className="text-[11px] text-muted-foreground italic">💡 {level.hint}</div>
+              </>
+            )}
+          </div>
         </Card>
 
         {/* 情境说明 */}
